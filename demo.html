@@ -406,17 +406,7 @@ body {
 
   <!-- Upload -->
   <section class="section" id="uploadSection">
-    <h3><span class="num">1</span>図面PDFアップロード & 解析</h3>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Anthropic API Key</label>
-        <input type="password" id="apiKey" placeholder="sk-ant-api03-...">
-      </div>
-      <div class="form-group">
-        <label>工事名称（任意）</label>
-        <input type="text" id="projectName" placeholder="例: 全館照明器具LED化工事">
-      </div>
-    </div>
+    <h3><span class="num">1</span>図面PDFアップロード</h3>
     <div class="upload-zone" id="uploadZone">
       <input type="file" id="pdfInput" accept=".pdf">
       <div id="uploadContent">
@@ -425,13 +415,42 @@ body {
         <p>施工図面・機器リスト・エリア図などを含むPDF（最大32MB）</p>
       </div>
     </div>
+    <div class="form-row" style="margin-top:20px;">
+      <div class="form-group">
+        <label>工事名称（任意）</label>
+        <input type="text" id="projectName" placeholder="例: 全館照明器具LED化工事">
+      </div>
+      <div class="form-group">
+        <label>宛先（任意）</label>
+        <input type="text" id="clientNameInput" placeholder="例: SOMPOコーポレートサービス株式会社">
+      </div>
+    </div>
+
+    <!-- APIキー（折りたたみ） -->
+    <details id="apiKeyDetails" style="margin-top:12px; border:1px solid var(--border); border-radius:var(--radius); padding:0;">
+      <summary style="padding:12px 16px; cursor:pointer; font-size:14px; font-weight:600; color:var(--text-sub); user-select:none; list-style:none; display:flex; align-items:center; gap:8px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+        Anthropic API Key を設定
+        <span id="apiKeyStatus" style="margin-left:auto; font-size:12px; font-weight:500; color:var(--error);">未設定</span>
+      </summary>
+      <div style="padding:0 16px 16px;">
+        <p style="font-size:13px; color:var(--text-sub); margin-bottom:10px;">実際のPDF解析にはAnthropic APIキーが必要です。サンプルデータはキー不要で試せます。</p>
+        <div style="display:flex; gap:8px; align-items:end;">
+          <div style="flex:1;">
+            <input type="password" id="apiKey" placeholder="sk-ant-api03-..." style="width:100%; padding:10px 14px; border:1px solid var(--border); border-radius:var(--radius); font-size:14px; font-family:'Inter',monospace;">
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="saveApiKey()" style="white-space:nowrap;">設定</button>
+        </div>
+      </div>
+    </details>
+
     <div style="margin-top:20px; display:flex; gap:12px; align-items:center; justify-content:center; flex-wrap:wrap;">
       <button class="btn btn-primary" id="analyzeBtn" onclick="startAnalysis()" disabled>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
         AIで見積書を生成
       </button>
       <button class="btn btn-outline btn-sm" onclick="loadSampleData()">
-        サンプルデータで試す
+        サンプルデータで試す（キー不要）
       </button>
     </div>
   </section>
@@ -481,6 +500,31 @@ body {
 // ===== State =====
 let selectedFile = null;
 let estimateResult = null;
+let apiKeyStored = '';
+
+// ===== APIキー管理 =====
+function saveApiKey() {
+  const key = document.getElementById('apiKey').value.trim();
+  if (!key) return;
+  apiKeyStored = key;
+  document.getElementById('apiKeyStatus').textContent = '設定済み';
+  document.getElementById('apiKeyStatus').style.color = 'var(--success)';
+  document.getElementById('apiKeyDetails').open = false;
+  checkReady();
+}
+document.getElementById('apiKey').addEventListener('input', () => {
+  const key = document.getElementById('apiKey').value.trim();
+  if (key) {
+    apiKeyStored = key;
+    document.getElementById('apiKeyStatus').textContent = '設定済み';
+    document.getElementById('apiKeyStatus').style.color = 'var(--success)';
+  } else {
+    apiKeyStored = '';
+    document.getElementById('apiKeyStatus').textContent = '未設定';
+    document.getElementById('apiKeyStatus').style.color = 'var(--error)';
+  }
+  checkReady();
+});
 
 // ===== File Upload =====
 const uploadZone = document.getElementById('uploadZone');
@@ -506,15 +550,16 @@ function handleFile(file) {
 }
 
 function checkReady() {
-  const key = document.getElementById('apiKey').value.trim();
-  document.getElementById('analyzeBtn').disabled = !(key && selectedFile);
+  document.getElementById('analyzeBtn').disabled = !(apiKeyStored && selectedFile);
 }
-document.getElementById('apiKey').addEventListener('input', checkReady);
 
 // ===== Analysis (real API call) =====
 async function startAnalysis() {
-  const apiKey = document.getElementById('apiKey').value.trim();
-  if (!apiKey || !selectedFile) return;
+  if (!apiKeyStored || !selectedFile) {
+    if (!apiKeyStored) { document.getElementById('apiKeyDetails').open = true; }
+    return;
+  }
+  const apiKey = apiKeyStored;
 
   const btn = document.getElementById('analyzeBtn');
   btn.disabled = true;
