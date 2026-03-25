@@ -1,0 +1,1053 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EstimateAI - 図面PDF → 見積書自動生成デモ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Noto+Sans+JP:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #ffffff;
+  --bg-sub: #f5f7fa;
+  --text: #1a1a2e;
+  --text-sub: #4a5568;
+  --accent: #1e3a5f;
+  --accent-light: #2d5a8e;
+  --success: #276749;
+  --warning: #975a16;
+  --error: #c53030;
+  --border: #e2e8f0;
+  --shadow: 0 4px 16px rgba(0,0,0,0.06);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.1);
+  --radius: 8px;
+}
+body {
+  font-family: 'Noto Sans JP', sans-serif;
+  background: var(--bg-sub);
+  color: var(--text);
+  line-height: 1.9;
+  font-size: 15px;
+}
+
+/* ===== Header ===== */
+.header {
+  background: linear-gradient(135deg, var(--accent) 0%, #142d4c 100%);
+  color: #fff;
+  padding: 20px 0;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+}
+.header-inner {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.header h1 {
+  font-family: 'Inter', sans-serif;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+}
+.header h1 span {
+  font-weight: 400;
+  opacity: 0.8;
+  font-size: 14px;
+  margin-left: 12px;
+}
+.badge {
+  background: rgba(255,255,255,0.15);
+  border: 1px solid rgba(255,255,255,0.3);
+  border-radius: 20px;
+  padding: 6px 16px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.badge .dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #48bb78;
+  animation: pulse 2s infinite;
+}
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+/* ===== Main ===== */
+.main { max-width: 1280px; margin: 0 auto; padding: 32px; }
+
+/* ===== Hero Section ===== */
+.hero {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+  padding: 48px;
+  text-align: center;
+  margin-bottom: 32px;
+}
+.hero-label {
+  display: inline-block;
+  background: rgba(30,58,95,0.1);
+  color: var(--accent);
+  padding: 4px 14px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-bottom: 16px;
+}
+.hero h2 {
+  font-family: 'Inter', sans-serif;
+  font-size: 36px;
+  font-weight: 800;
+  color: var(--text);
+  margin-bottom: 12px;
+  line-height: 1.3;
+}
+.hero p {
+  font-size: 17px;
+  color: var(--text-sub);
+  max-width: 640px;
+  margin: 0 auto 28px;
+}
+.hero-steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  margin-top: 36px;
+}
+.hero-step {
+  background: var(--bg-sub);
+  border-radius: var(--radius);
+  padding: 24px;
+  text-align: center;
+}
+.hero-step-num {
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Inter', sans-serif;
+  font-weight: 800;
+  font-size: 18px;
+  margin: 0 auto 12px;
+}
+.hero-step h4 {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.hero-step p {
+  font-size: 13px;
+  color: var(--text-sub);
+  margin: 0;
+}
+
+/* ===== Upload Section ===== */
+.section {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 32px;
+  margin-bottom: 24px;
+}
+.section h3 {
+  font-family: 'Inter', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.section h3 .num {
+  background: var(--accent);
+  color: #fff;
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+/* Upload Zone */
+.upload-zone {
+  border: 2px dashed var(--border);
+  border-radius: 12px;
+  padding: 40px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s;
+  background: var(--bg-sub);
+  position: relative;
+}
+.upload-zone:hover { border-color: var(--accent); background: rgba(30,58,95,0.03); }
+.upload-zone.dragover { border-color: var(--accent); background: rgba(30,58,95,0.05); transform: scale(1.01); }
+.upload-zone.has-file { border-color: var(--success); border-style: solid; background: #f0fff4; }
+.upload-icon { font-size: 48px; margin-bottom: 8px; opacity: 0.5; }
+.upload-zone h4 { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+.upload-zone p { font-size: 14px; color: var(--text-sub); }
+.upload-zone input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+/* Form */
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+.form-group { margin-bottom: 16px; }
+.form-group label { display: block; font-size: 13px; font-weight: 500; color: var(--text-sub); margin-bottom: 6px; }
+.form-group input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 15px;
+  font-family: inherit;
+  transition: border-color 0.2s;
+}
+.form-group input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(30,58,95,0.1); }
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 28px;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 15px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover:not(:disabled) { background: var(--accent-light); transform: translateY(-1px); box-shadow: var(--shadow-lg); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-outline { background: transparent; color: var(--accent); border: 2px solid var(--accent); }
+.btn-outline:hover { background: var(--accent); color: #fff; }
+.btn-sm { padding: 8px 16px; font-size: 13px; }
+.btn-success { background: var(--success); color: #fff; }
+
+/* Progress */
+.progress-section { display: none; }
+.progress-section.visible { display: block; }
+.progress-bar-outer { background: #edf2f7; border-radius: 8px; height: 8px; overflow: hidden; margin-bottom: 16px; }
+.progress-bar-inner {
+  height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-light));
+  border-radius: 8px; transition: width 0.8s ease; width: 0%;
+}
+.progress-status { font-size: 15px; font-weight: 500; display: flex; align-items: center; gap: 10px; }
+.spinner {
+  width: 20px; height: 20px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.progress-log {
+  margin-top: 16px;
+  padding: 16px;
+  background: #1a1a2e;
+  border-radius: var(--radius);
+  font-family: 'Inter', monospace;
+  font-size: 13px;
+  color: #a0aec0;
+  max-height: 200px;
+  overflow-y: auto;
+  line-height: 1.7;
+}
+.log-entry.success { color: #68d391; }
+.log-entry.error { color: #fc8181; }
+.log-entry.info { color: #63b3ed; }
+
+/* ===== Tabs ===== */
+.tabs { display: flex; gap: 4px; margin-bottom: 24px; border-bottom: 2px solid var(--border); }
+.tab {
+  padding: 10px 20px; font-size: 14px; font-weight: 600;
+  color: var(--text-sub); border: none; background: none; cursor: pointer;
+  position: relative; font-family: inherit;
+}
+.tab.active { color: var(--accent); }
+.tab.active::after { content:''; position: absolute; bottom: -2px; left: 0; right: 0; height: 2px; background: var(--accent); }
+
+/* ===== Estimate Document ===== */
+.estimate-section { display: none; }
+.estimate-section.visible { display: block; }
+.estimate-actions { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
+.estimate-document { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-lg); overflow: hidden; }
+
+.est-header {
+  background: linear-gradient(135deg, var(--accent) 0%, #142d4c 100%);
+  color: #fff; padding: 32px 40px;
+  display: flex; justify-content: space-between; align-items: flex-start;
+}
+.est-header-left h2 { font-family:'Inter',sans-serif; font-size:28px; font-weight:800; margin-bottom:4px; }
+.est-header-left p { font-size:14px; opacity:0.8; }
+.est-header-right { text-align:right; font-size:14px; line-height:1.8; }
+
+.est-summary { padding: 32px 40px; border-bottom: 1px solid var(--border); }
+.est-summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.est-info-row { display: flex; padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
+.est-info-label { font-size:13px; color:var(--text-sub); width:140px; flex-shrink:0; }
+.est-info-value { font-size:15px; font-weight:500; }
+.est-total-box { background:var(--bg-sub); border:2px solid var(--accent); border-radius:var(--radius); padding:24px; text-align:center; }
+.est-total-label { font-size:14px; color:var(--text-sub); margin-bottom:4px; }
+.est-total-amount { font-family:'Inter',sans-serif; font-size:42px; font-weight:800; color:var(--accent); line-height:1.2; }
+.est-total-amount small { font-size:18px; font-weight:600; }
+.est-total-breakdown { margin-top:12px; font-size:14px; color:var(--text-sub); }
+
+.est-body { padding: 32px 40px; }
+.est-body h4 {
+  font-family:'Inter',sans-serif; font-size:20px; font-weight:700;
+  color:var(--accent); margin-bottom:20px; padding-bottom:10px;
+  border-bottom:2px solid var(--accent);
+}
+
+.est-table { width:100%; border-collapse:collapse; font-size:14px; margin-bottom:32px; }
+.est-table th { background:var(--accent); color:#fff; padding:10px 14px; text-align:left; font-weight:600; font-size:13px; white-space:nowrap; }
+.est-table th.num { text-align:right; }
+.est-table td { padding:10px 14px; border-bottom:1px solid var(--border); vertical-align:top; }
+.est-table td.num { text-align:right; font-family:'Inter',sans-serif; font-weight:600; white-space:nowrap; }
+.est-table tr.cat-row { background:#edf2f7; font-weight:700; }
+.est-table tr.cat-row td { padding:12px 14px; border-bottom:2px solid var(--accent); }
+.est-table tr.item-row td { padding-left:28px; }
+.est-table tr.detail-row td { padding-left:48px; font-size:13px; color:var(--text-sub); }
+.est-table tr.subtotal-row { background:#f7fafc; font-weight:700; }
+.est-table tr.subtotal-row td { border-top:2px solid var(--border); }
+.est-table tr.total-row { background:var(--accent); color:#fff; font-weight:700; font-size:16px; }
+.est-table tr.total-row td { padding:14px; border:none; }
+.est-table tr.discount-row td { color:var(--error); }
+
+.est-notes { padding:24px 40px 32px; border-top:1px solid var(--border); }
+.est-notes h5 { font-size:15px; font-weight:700; color:var(--accent); margin-bottom:12px; }
+.est-notes ul { list-style:none; padding:0; }
+.est-notes li { padding:4px 0 4px 20px; position:relative; font-size:14px; color:var(--text-sub); }
+.est-notes li::before { content:''; position:absolute; left:0; top:12px; width:8px; height:8px; border-radius:50%; background:var(--accent); opacity:0.4; }
+
+/* Floor Grid */
+.floor-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:16px; }
+.floor-card { background:var(--bg-sub); border:1px solid var(--border); border-radius:var(--radius); padding:16px; }
+.floor-card h5 { font-family:'Inter',sans-serif; font-size:15px; font-weight:700; color:var(--accent); margin-bottom:8px; padding-bottom:6px; border-bottom:2px solid var(--accent); }
+.floor-card table { width:100%; font-size:13px; }
+.floor-card td { padding:3px 0; }
+.floor-card td:last-child { text-align:right; font-family:'Inter',sans-serif; font-weight:600; }
+
+/* ===== Print ===== */
+@media print {
+  body { background:#fff; }
+  .header,.hero,.section:not(.estimate-section),.progress-section,.estimate-actions,.tabs,.no-print { display:none !important; }
+  .estimate-section { display:block !important; }
+  .estimate-document { box-shadow:none; border:none; }
+  @page { size:A4 landscape; margin:10mm; }
+}
+
+@media (max-width:768px) {
+  .main { padding:16px; }
+  .hero { padding:32px 20px; }
+  .hero h2 { font-size:24px; }
+  .hero-steps { grid-template-columns:1fr; }
+  .est-summary-grid { grid-template-columns:1fr; }
+  .form-row { grid-template-columns:1fr; }
+  .est-header { flex-direction:column; gap:16px; padding:24px; }
+  .est-header-right { text-align:left; }
+  .est-body { padding:16px; }
+  .est-total-amount { font-size:32px; }
+}
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-inner">
+    <h1>EstimateAI<span>図面PDF → 見積書自動生成</span></h1>
+    <div class="badge"><div class="dot"></div>Claude Opus 4 搭載</div>
+  </div>
+</header>
+
+<main class="main">
+  <!-- Hero -->
+  <section class="hero">
+    <div class="hero-label">AI-Powered Estimation</div>
+    <h2>建設図面から見積書を<br>AIが自動生成</h2>
+    <p>施工図面・機器リストのPDFをアップロードするだけで、Claude Opus 4 が図面を精査し、詳細な見積書を自動作成します。</p>
+    <div class="hero-steps">
+      <div class="hero-step">
+        <div class="hero-step-num">1</div>
+        <h4>PDFアップロード</h4>
+        <p>施工図面・機器リスト・エリア図を含むPDFを選択</p>
+      </div>
+      <div class="hero-step">
+        <div class="hero-step-num">2</div>
+        <h4>AI解析</h4>
+        <p>Claude Opus 4が器具の種類・数量・型番を自動抽出</p>
+      </div>
+      <div class="hero-step">
+        <div class="hero-step-num">3</div>
+        <h4>見積書生成</h4>
+        <p>業界標準フォーマットの見積書をワンクリックで出力</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Upload -->
+  <section class="section" id="uploadSection">
+    <h3><span class="num">1</span>図面PDFアップロード & 解析</h3>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Anthropic API Key</label>
+        <input type="password" id="apiKey" placeholder="sk-ant-api03-...">
+      </div>
+      <div class="form-group">
+        <label>工事名称（任意）</label>
+        <input type="text" id="projectName" placeholder="例: 全館照明器具LED化工事">
+      </div>
+    </div>
+    <div class="upload-zone" id="uploadZone">
+      <input type="file" id="pdfInput" accept=".pdf">
+      <div id="uploadContent">
+        <div class="upload-icon">PDF</div>
+        <h4>図面PDFをドロップ、またはクリックして選択</h4>
+        <p>施工図面・機器リスト・エリア図などを含むPDF（最大32MB）</p>
+      </div>
+    </div>
+    <div style="margin-top:20px; display:flex; gap:12px; align-items:center; justify-content:center; flex-wrap:wrap;">
+      <button class="btn btn-primary" id="analyzeBtn" onclick="startAnalysis()" disabled>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        AIで見積書を生成
+      </button>
+      <button class="btn btn-outline btn-sm" onclick="loadSampleData()">
+        サンプルデータで試す
+      </button>
+    </div>
+  </section>
+
+  <!-- Progress -->
+  <section class="section progress-section" id="progressSection">
+    <div class="progress-bar-outer">
+      <div class="progress-bar-inner" id="progressBar"></div>
+    </div>
+    <div class="progress-status">
+      <div class="spinner" id="progressSpinner"></div>
+      <span id="progressText">処理中...</span>
+    </div>
+    <div class="progress-log" id="progressLog"></div>
+  </section>
+
+  <!-- Results -->
+  <section class="estimate-section" id="estimateSection">
+    <div class="tabs no-print">
+      <button class="tab active" onclick="switchTab('estimate',this)">見積書</button>
+      <button class="tab" onclick="switchTab('extraction',this)">抽出データ</button>
+      <button class="tab" onclick="switchTab('raw',this)">RAWデータ</button>
+    </div>
+    <div class="estimate-actions no-print">
+      <button class="btn btn-primary" onclick="window.print()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+        印刷 / PDF保存
+      </button>
+      <button class="btn btn-outline btn-sm" onclick="downloadCSV()">CSV出力</button>
+      <button class="btn btn-outline btn-sm" onclick="downloadJSON()">JSON出力</button>
+    </div>
+    <div id="tab-estimate" class="tab-content">
+      <div class="estimate-document" id="estimateDoc"></div>
+    </div>
+    <div id="tab-extraction" class="tab-content" style="display:none;">
+      <div id="extractionDoc"></div>
+    </div>
+    <div id="tab-raw" class="tab-content" style="display:none;">
+      <div style="background:#1a1a2e; border-radius:8px; padding:24px; overflow-x:auto;">
+        <pre id="rawDoc" style="color:#a0aec0; font-family:'Inter',monospace; font-size:13px; white-space:pre-wrap;"></pre>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+// ===== State =====
+let selectedFile = null;
+let estimateResult = null;
+
+// ===== File Upload =====
+const uploadZone = document.getElementById('uploadZone');
+const pdfInput = document.getElementById('pdfInput');
+
+pdfInput.addEventListener('change', e => { if(e.target.files[0]) handleFile(e.target.files[0]); });
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('dragover'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+uploadZone.addEventListener('drop', e => { e.preventDefault(); uploadZone.classList.remove('dragover'); if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
+
+function handleFile(file) {
+  if (file.type !== 'application/pdf') return alert('PDFファイルを選択してください');
+  selectedFile = file;
+  uploadZone.classList.add('has-file');
+  document.getElementById('uploadContent').innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;justify-content:center;">
+      <span style="font-size:32px;">PDF</span>
+      <div style="text-align:left;"><div style="font-weight:700;">${file.name}</div>
+      <div style="font-size:13px;color:var(--text-sub);">${(file.size/1024/1024).toFixed(1)} MB</div></div>
+    </div>
+    <p style="margin-top:10px;font-size:13px;color:var(--success);">読み込み完了</p>`;
+  checkReady();
+}
+
+function checkReady() {
+  const key = document.getElementById('apiKey').value.trim();
+  document.getElementById('analyzeBtn').disabled = !(key && selectedFile);
+}
+document.getElementById('apiKey').addEventListener('input', checkReady);
+
+// ===== Analysis (real API call) =====
+async function startAnalysis() {
+  const apiKey = document.getElementById('apiKey').value.trim();
+  if (!apiKey || !selectedFile) return;
+
+  const btn = document.getElementById('analyzeBtn');
+  btn.disabled = true;
+
+  showProgress();
+  addLog('info', `PDF: ${selectedFile.name} (${(selectedFile.size/1024/1024).toFixed(1)} MB)`);
+
+  try {
+    // Read file as base64
+    addLog('info', 'PDFをBase64にエンコード中...');
+    const base64 = await fileToBase64(selectedFile);
+    updateProgress(10, 'AI が図面を解析しています...（ステップ 1/2: 情報抽出）');
+    addLog('info', 'Claude Opus 4 にPDFを送信中...');
+
+    // Step 1: Extract data
+    const extractionResult = await callClaude(apiKey, base64, getExtractionPrompt());
+    updateProgress(50, 'AI が見積書を作成しています...（ステップ 2/2: 見積書生成）');
+    addLog('success', '図面データの抽出が完了');
+
+    // Step 2: Generate estimate
+    const projectName = document.getElementById('projectName').value || '';
+    const estimateResult2 = await callClaude(apiKey, base64, getEstimatePrompt(projectName));
+    updateProgress(100, '完了');
+    addLog('success', '見積書の生成が完了しました');
+
+    let extraction = parseJSON(extractionResult);
+    let estimate = parseJSON(estimateResult2);
+
+    estimateResult = { extraction, estimate };
+    renderAll(extraction, estimate);
+    document.getElementById('progressSpinner').style.display = 'none';
+
+  } catch(e) {
+    addLog('error', 'エラー: ' + e.message);
+    updateProgress(0, 'エラーが発生しました');
+    document.getElementById('progressSpinner').style.display = 'none';
+  }
+  btn.disabled = false;
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function callClaude(apiKey, pdfBase64, textPrompt) {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: 'claude-opus-4-0-20250514',
+      max_tokens: 16000,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 } },
+          { type: 'text', text: textPrompt }
+        ]
+      }]
+    })
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || `API Error ${res.status}`);
+  }
+  const data = await res.json();
+  return data.content[0].text;
+}
+
+function getExtractionPrompt() {
+  return `あなたは建設・電気設備工事の見積もり専門AIです。
+このPDF図面から以下の情報を正確に抽出してJSON形式で返してください。
+
+{
+  "projectName": "プロジェクト名",
+  "buildingName": "ビル名",
+  "location": "所在地",
+  "floors": [
+    { "floor": "フロア名", "fixtures": [
+      { "type": "器具種別", "modelCode": "型番", "quantity": 数量 }
+    ]}
+  ],
+  "fixtureModels": [
+    { "code": "コード", "manufacturer": "メーカー", "modelNumber": "型番", "description": "説明", "wattage": "W数" }
+  ],
+  "specialNotes": ["特記事項"],
+  "constructionScope": { "targetFloors": [], "scaffoldingRequired": true, "nightWorkRequired": true }
+}
+
+PDFの全ページを精査し、数量は図面の凡例を正確に読み取ってください。JSONのみ出力。`;
+}
+
+function getEstimatePrompt(projectName) {
+  return `あなたは建設・電気設備工事の見積もり専門AIです。
+このPDF図面に基づき、詳細な見積書をJSON形式で作成してください。
+
+工事名: ${projectName}
+
+{
+  "estimate": {
+    "title": "御見積書",
+    "date": "${new Date().toLocaleDateString('ja-JP')}",
+    "estimateNo": "E2026-0001",
+    "clientName": "宛先",
+    "projectName": "工事名称",
+    "location": "工事場所",
+    "constructionPeriod": { "start": "着工", "end": "竣工", "duration": "工期" },
+    "summary": {
+      "subtotal": 小計, "discount": 値引, "constructionPrice": 工事価格,
+      "legalWelfare": 法定福利費, "totalBeforeTax": 税抜合計, "tax": 消費税, "totalWithTax": 税込合計
+    },
+    "categories": [
+      { "id": "1", "name": "仮設工事", "amount": 金額, "items": [
+        { "id": "1-1", "name": "項目名", "quantity": 1.0, "unit": "式", "unitPrice": 単価, "amount": 金額,
+          "details": [{ "name": "明細", "specification": "仕様", "quantity": 数量, "unit": "台", "unitPrice": 単価, "amount": 金額, "note": "" }]
+        }
+      ]},
+      { "id": "2", "name": "建築工事", "amount": 金額, "items": [...] },
+      { "id": "3", "name": "電気設備工事", "amount": 金額, "items": [...] },
+      { "id": "4", "name": "建設副産物処分費", "amount": 金額, "items": [...] },
+      { "id": "5", "name": "現場管理費", "amount": 金額, "items": [] },
+      { "id": "6", "name": "諸経費", "amount": 金額, "items": [] }
+    ],
+    "notes": ["特記事項"]
+  }
+}
+
+重要: 電気設備工事はフロア別に分割。器具単価はベースライト15,000-45,000円、ダウンライト8,000-25,000円、非常灯20,000-35,000円、誘導灯15,000-50,000円。施工費3,000-8,000円/台、撤去費2,000-4,000円/台。現場管理費7-8%、諸経費9-10%、法定福利費3-4%、出精値引5%程度。金額は整数。JSONのみ出力。`;
+}
+
+function parseJSON(text) {
+  const m = text.match(/\{[\s\S]*\}/);
+  if (m) {
+    try { return JSON.parse(m[0]); } catch(e) {
+      try { return JSON.parse(m[0].replace(/,\s*}/g,'}').replace(/,\s*]/g,']')); } catch(e2) { return { raw: text }; }
+    }
+  }
+  return { raw: text };
+}
+
+// ===== Sample Data =====
+function loadSampleData() {
+  showProgress();
+  let step = 0;
+  const steps = [
+    [5, 'PDFを読み込んでいます...', 'info', 'サンプル: 損保ジャパン日本橋ビル 照明LED化工事'],
+    [20, 'AI が図面を解析しています...（ステップ 1/2: 情報抽出）', 'info', 'Claude Opus 4 が図面を解析中...'],
+    [40, 'フロア別の器具情報を抽出中...', 'info', 'B2F〜RF + PH階: 全16フロア検出'],
+    [55, '器具型番・数量のクロスチェック中...', 'success', '一般照明: 6種 / 非常灯・誘導灯: 14種 を検出'],
+    [70, 'AI が見積書を作成しています...（ステップ 2/2: 見積書生成）', 'info', '電気設備工事の積算を実行中...'],
+    [85, '仮設工事・建築工事・諸経費を算出中...', 'info', '市場単価データベースと照合中...'],
+    [100, '見積書の生成が完了しました', 'success', '全6カテゴリ・13サブカテゴリの見積書を生成']
+  ];
+
+  function next() {
+    if (step >= steps.length) {
+      document.getElementById('progressSpinner').style.display = 'none';
+      estimateResult = { extraction: sampleExtraction, estimate: sampleEstimate };
+      renderAll(sampleExtraction, sampleEstimate);
+      return;
+    }
+    const [pct, msg, type, log] = steps[step++];
+    updateProgress(pct, msg);
+    addLog(type, log);
+    setTimeout(next, 600 + Math.random() * 400);
+  }
+  next();
+}
+
+// ===== Progress UI =====
+function showProgress() {
+  const s = document.getElementById('progressSection');
+  s.classList.add('visible');
+  document.getElementById('progressLog').innerHTML = '';
+  document.getElementById('progressBar').style.width = '0%';
+  document.getElementById('progressSpinner').style.display = 'block';
+  s.scrollIntoView({ behavior: 'smooth' });
+}
+function updateProgress(pct, msg) {
+  document.getElementById('progressBar').style.width = pct + '%';
+  document.getElementById('progressText').textContent = msg;
+}
+function addLog(type, msg) {
+  const el = document.getElementById('progressLog');
+  const t = new Date().toLocaleTimeString('ja-JP');
+  el.innerHTML += `<div class="log-entry ${type}">[${t}] ${msg}</div>`;
+  el.scrollTop = el.scrollHeight;
+}
+
+// ===== Render =====
+function renderAll(extraction, estimate) {
+  renderEstimate(estimate);
+  renderExtraction(extraction);
+  document.getElementById('rawDoc').textContent = JSON.stringify({ extraction, estimate }, null, 2);
+  document.getElementById('estimateSection').classList.add('visible');
+  setTimeout(() => document.getElementById('estimateSection').scrollIntoView({ behavior:'smooth' }), 300);
+}
+
+function renderEstimate(data) {
+  const doc = document.getElementById('estimateDoc');
+  const est = data.estimate || data;
+  if (data.raw) { doc.innerHTML = `<div style="padding:40px"><pre style="white-space:pre-wrap">${esc(data.raw)}</pre></div>`; return; }
+  const s = est.summary || {};
+  const cats = est.categories || [];
+
+  let h = `<div class="est-header">
+    <div class="est-header-left"><h2>${est.title||'御見積書'}</h2><p>${est.projectName||''}</p></div>
+    <div class="est-header-right"><div>提出日: ${est.date||''}</div><div>見積No: ${est.estimateNo||''}</div><div style="margin-top:8px;font-weight:700;">株式会社NARUSE</div></div>
+  </div>`;
+
+  h += `<div class="est-summary"><div class="est-summary-grid">
+    <div>
+      <div class="est-info-row"><span class="est-info-label">宛先</span><span class="est-info-value">${est.clientName||''} 御中</span></div>
+      <div class="est-info-row"><span class="est-info-label">工事名称</span><span class="est-info-value">${est.projectName||''}</span></div>
+      <div class="est-info-row"><span class="est-info-label">工事場所</span><span class="est-info-value">${est.location||''}</span></div>
+      ${est.constructionPeriod?`<div class="est-info-row"><span class="est-info-label">工期</span><span class="est-info-value">${est.constructionPeriod.start||''}〜${est.constructionPeriod.end||''} (${est.constructionPeriod.duration||''})</span></div>`:''}
+    </div>
+    <div><div class="est-total-box">
+      <div class="est-total-label">お見積金額（税込）</div>
+      <div class="est-total-amount">&yen;${fmt(s.totalWithTax)}<small>-</small></div>
+      <div class="est-total-breakdown">本体: &yen;${fmt(s.totalBeforeTax)} ／ 消費税: &yen;${fmt(s.tax)}</div>
+    </div></div>
+  </div></div>`;
+
+  // Summary table
+  h += `<div class="est-body"><h4>内訳総括表</h4>
+  <table class="est-table"><thead><tr><th style="width:50px">No</th><th>名称</th><th style="width:60px">数量</th><th style="width:50px">単位</th><th class="num" style="width:130px">金額</th></tr></thead><tbody>`;
+  cats.forEach(c => { h += `<tr class="cat-row"><td>${c.id}</td><td>${c.name}</td><td>1.0</td><td>式</td><td class="num">${fmt(c.amount)}</td></tr>`; });
+  h += `<tr class="subtotal-row"><td></td><td style="text-align:right" colspan="3">計</td><td class="num">${fmt(s.subtotal)}</td></tr>`;
+  if(s.discount) h += `<tr class="discount-row"><td></td><td style="text-align:right" colspan="3">出精値引</td><td class="num">&blacktriangle; ${fmt(Math.abs(s.discount))}</td></tr>`;
+  h += `<tr class="subtotal-row"><td></td><td style="text-align:right" colspan="3">工事価格</td><td class="num">${fmt(s.constructionPrice)}</td></tr>`;
+  if(s.legalWelfare) h += `<tr><td></td><td style="text-align:right" colspan="3">法定福利費</td><td class="num">${fmt(s.legalWelfare)}</td></tr>`;
+  h += `<tr class="subtotal-row"><td></td><td style="text-align:right" colspan="3">税抜合計</td><td class="num">${fmt(s.totalBeforeTax)}</td></tr>`;
+  h += `<tr><td></td><td style="text-align:right" colspan="3">消費税等（10%）</td><td class="num">${fmt(s.tax)}</td></tr>`;
+  h += `<tr class="total-row"><td></td><td style="text-align:right" colspan="3">合 計</td><td class="num">&yen;${fmt(s.totalWithTax)}</td></tr>`;
+  h += `</tbody></table>`;
+
+  // Detail tables
+  cats.forEach(c => {
+    if(!c.items || c.items.length===0) return;
+    h += `<h4 style="margin-top:32px">${c.id}. ${c.name} 明細</h4>
+    <table class="est-table"><thead><tr><th style="width:70px">No</th><th>名称</th><th>仕様</th><th class="num" style="width:60px">数量</th><th style="width:40px">単位</th><th class="num" style="width:100px">単価</th><th class="num" style="width:120px">金額</th><th style="width:80px">備考</th></tr></thead><tbody>`;
+    c.items.forEach(it => {
+      h += `<tr class="item-row"><td>${it.id}</td><td>${it.name}</td><td>${it.specification||''}</td><td class="num">${it.quantity||''}</td><td>${it.unit||''}</td><td class="num">${fmt(it.unitPrice)}</td><td class="num">${fmt(it.amount)}</td><td>${it.note||''}</td></tr>`;
+      (it.details||[]).forEach(d => {
+        h += `<tr class="detail-row"><td></td><td>${d.name||''}</td><td>${d.specification||''}</td><td class="num">${d.quantity||''}</td><td>${d.unit||''}</td><td class="num">${fmt(d.unitPrice)}</td><td class="num">${fmt(d.amount)}</td><td>${d.note||''}</td></tr>`;
+      });
+    });
+    h += `<tr class="subtotal-row"><td></td><td colspan="5" style="text-align:right">${c.id}-計</td><td class="num">${fmt(c.amount)}</td><td></td></tr></tbody></table>`;
+  });
+  h += `</div>`;
+
+  if(est.notes && est.notes.length) {
+    h += `<div class="est-notes"><h5>特記事項</h5><ul>${est.notes.map(n=>`<li>${esc(n)}</li>`).join('')}</ul></div>`;
+  }
+  doc.innerHTML = h;
+}
+
+function renderExtraction(data) {
+  const el = document.getElementById('extractionDoc');
+  if(!data||data.raw) { el.innerHTML=`<pre style="white-space:pre-wrap">${esc(data?.raw||'')}</pre>`; return; }
+  let h = `<h3 style="font-family:Inter;font-size:18px;font-weight:700;color:var(--accent);margin-bottom:20px;">${data.projectName||data.buildingName||'抽出データ'}</h3>`;
+  if(data.constructionScope) {
+    h += `<div style="margin-bottom:20px;padding:16px;background:var(--bg-sub);border-radius:8px;border:1px solid var(--border);">
+      <strong>対象フロア:</strong> ${(data.constructionScope.targetFloors||[]).join(', ')}<br>
+      <strong>足場:</strong> ${data.constructionScope.scaffoldingRequired?'必要':'不要'} ／ <strong>夜間作業:</strong> ${data.constructionScope.nightWorkRequired?'あり':'なし'}
+    </div>`;
+  }
+  if(data.floors) {
+    h += `<div class="floor-grid">`;
+    data.floors.forEach(f => {
+      h += `<div class="floor-card"><h5>${f.floor}</h5><table>`;
+      (f.fixtures||[]).forEach(fx => { h += `<tr><td>${fx.type}${fx.modelCode?' ('+fx.modelCode+')':''}</td><td>${fx.quantity} 台</td></tr>`; });
+      h += `</table></div>`;
+    });
+    h += `</div>`;
+  }
+  el.innerHTML = h;
+}
+
+// ===== Tabs =====
+function switchTab(name, btn) {
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t=>t.style.display='none');
+  btn.classList.add('active');
+  document.getElementById('tab-'+name).style.display='block';
+}
+
+// ===== Export =====
+function downloadCSV() {
+  if(!estimateResult) return;
+  const est = estimateResult.estimate.estimate || estimateResult.estimate;
+  let csv = '\uFEFF' + 'No,名称,仕様,数量,単位,単価,金額,備考\n';
+  (est.categories||[]).forEach(c => {
+    csv += `${c.id},"${c.name}",,,,,"${fmt(c.amount)}",\n`;
+    (c.items||[]).forEach(it => {
+      csv += `${it.id},"${it.name}","${it.specification||''}",${it.quantity||''},${it.unit||''},"${fmt(it.unitPrice)}","${fmt(it.amount)}","${it.note||''}"\n`;
+      (it.details||[]).forEach(d => { csv += `,"${d.name||''}","${d.specification||''}",${d.quantity||''},${d.unit||''},"${fmt(d.unitPrice)}","${fmt(d.amount)}","${d.note||''}"\n`; });
+    });
+  });
+  dl(new Blob([csv],{type:'text/csv;charset=utf-8;'}), '見積書.csv');
+}
+function downloadJSON() {
+  if(!estimateResult) return;
+  dl(new Blob([JSON.stringify(estimateResult,null,2)],{type:'application/json'}), '見積書.json');
+}
+function dl(blob, name) { const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); URL.revokeObjectURL(a.href); }
+function fmt(n) { return n==null||n===''||isNaN(n)?'':Number(n).toLocaleString('ja-JP'); }
+function esc(s) { return s?s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'):''; }
+
+// ===== SAMPLE DATA =====
+const sampleExtraction = {
+  "projectName": "損保ジャパン日本橋ビル 全館照明器具LED化工事",
+  "buildingName": "損保ジャパン日本橋ビル",
+  "location": "東京都中央区日本橋2-2-10",
+  "constructionScope": {
+    "targetFloors": ["B2F","B1F","1F","2F","3F","4F","5F","6F","7F","8F","9F","10F","11F","RF","PH階","内階段","吹抜階段"],
+    "scaffoldingRequired": true,
+    "nightWorkRequired": true
+  },
+  "floors": [
+    {"floor":"RF","fixtures":[{"type":"ベースライト","quantity":57},{"type":"ダウンライト","quantity":10},{"type":"非常灯","quantity":9},{"type":"誘導灯","quantity":2}]},
+    {"floor":"11F","fixtures":[{"type":"ベースライト","quantity":456},{"type":"ダウンライト","quantity":194},{"type":"非常灯","quantity":73},{"type":"誘導灯","quantity":17}]},
+    {"floor":"10F","fixtures":[{"type":"ベースライト","quantity":300},{"type":"ダウンライト","quantity":53},{"type":"非常灯","quantity":61},{"type":"誘導灯","quantity":10}]},
+    {"floor":"9F","fixtures":[{"type":"ベースライト","quantity":300},{"type":"ダウンライト","quantity":53},{"type":"非常灯","quantity":60},{"type":"誘導灯","quantity":7}]},
+    {"floor":"8F","fixtures":[{"type":"ベースライト","quantity":300},{"type":"ダウンライト","quantity":53},{"type":"非常灯","quantity":60},{"type":"誘導灯","quantity":7}]},
+    {"floor":"7F","fixtures":[{"type":"ベースライト","quantity":300},{"type":"ダウンライト","quantity":53},{"type":"非常灯","quantity":60},{"type":"誘導灯","quantity":13}]},
+    {"floor":"6F","fixtures":[{"type":"ベースライト","quantity":300},{"type":"ダウンライト","quantity":53},{"type":"非常灯","quantity":60},{"type":"誘導灯","quantity":8}]},
+    {"floor":"5F","fixtures":[{"type":"ベースライト","quantity":300},{"type":"ダウンライト","quantity":53},{"type":"非常灯","quantity":60},{"type":"誘導灯","quantity":8}]},
+    {"floor":"4F","fixtures":[{"type":"ベースライト","quantity":300},{"type":"ダウンライト","quantity":53},{"type":"非常灯","quantity":60},{"type":"誘導灯","quantity":8}]},
+    {"floor":"3F","fixtures":[{"type":"ベースライト","quantity":300},{"type":"ダウンライト","quantity":53},{"type":"非常灯","quantity":60},{"type":"誘導灯","quantity":8}]},
+    {"floor":"2F","fixtures":[{"type":"ベースライト","quantity":497},{"type":"ダウンライト","quantity":196},{"type":"非常灯","quantity":72},{"type":"誘導灯","quantity":12}]},
+    {"floor":"1F","fixtures":[{"type":"ベースライト","quantity":96},{"type":"ダウンライト","quantity":131},{"type":"非常灯","quantity":36},{"type":"誘導灯","quantity":16}]},
+    {"floor":"B1F","fixtures":[{"type":"ベースライト","quantity":144},{"type":"ダウンライト","quantity":55},{"type":"非常灯","quantity":59},{"type":"誘導灯","quantity":15}]},
+    {"floor":"B2F","fixtures":[{"type":"ベースライト","quantity":161},{"type":"ダウンライト","quantity":0},{"type":"非常灯","quantity":72},{"type":"誘導灯","quantity":17}]},
+    {"floor":"内階段","fixtures":[{"type":"ベースライト","quantity":0},{"type":"非常灯","quantity":37},{"type":"誘導灯","quantity":0}]},
+    {"floor":"吹抜階段","fixtures":[{"type":"ベースライト","quantity":42},{"type":"ダウンライト","quantity":3},{"type":"非常灯","quantity":32},{"type":"誘導灯","quantity":0}]}
+  ]
+};
+
+const sampleEstimate = {"estimate":{
+  "title":"御見積書",
+  "date":"2026年3月25日",
+  "estimateNo":"E2026-10058",
+  "clientName":"SOMPOコーポレートサービス株式会社",
+  "projectName":"損保ジャパン日本橋ビル全館照明器具LED化工事",
+  "location":"東京都中央区日本橋2-2-10",
+  "constructionPeriod":{"start":"2026年8月1日","end":"2028年1月31日","duration":"延べ18ヶ月"},
+  "summary":{
+    "subtotal":569460400,
+    "discount":29337400,
+    "constructionPrice":540123000,
+    "legalWelfare":19877000,
+    "totalBeforeTax":560000000,
+    "tax":56000000,
+    "totalWithTax":616000000
+  },
+  "categories":[
+    {"id":"1","name":"仮設工事","amount":26192000,"items":[
+      {"id":"1-1","name":"共通仮設工事","quantity":1.0,"unit":"式","unitPrice":17200000,"amount":17200000,"details":[
+        {"name":"外部足場工事","specification":"7台×14ヶ月","quantity":1,"unit":"式","unitPrice":9665000,"amount":9665000,"note":""},
+        {"name":"養生・安全設備","specification":"","quantity":1,"unit":"式","unitPrice":4200000,"amount":4200000,"note":""},
+        {"name":"仮設電気・水道","specification":"","quantity":1,"unit":"式","unitPrice":3335000,"amount":3335000,"note":""}
+      ]},
+      {"id":"1-2","name":"直接仮設工事","quantity":1.0,"unit":"式","unitPrice":8992000,"amount":8992000,"details":[
+        {"name":"エスカレーター仮設足場工事","specification":"","quantity":1,"unit":"式","unitPrice":1448000,"amount":1448000,"note":""},
+        {"name":"吹抜け階段仮設足場工事","specification":"3〜11F","quantity":1,"unit":"式","unitPrice":7068000,"amount":7068000,"note":""},
+        {"name":"仮設足場計画図面・書類作成費","specification":"","quantity":1,"unit":"式","unitPrice":476000,"amount":476000,"note":""}
+      ]}
+    ]},
+    {"id":"2","name":"建築工事","amount":27867000,"items":[
+      {"id":"2-1","name":"1階照明器具更新工事","quantity":1.0,"unit":"式","unitPrice":846000,"amount":846000,"details":[
+        {"name":"養生費・片付け・清掃","specification":"","quantity":1,"unit":"回","unitPrice":67000,"amount":67000,"note":"昼間作業"},
+        {"name":"養生費","specification":"ブルーシート+フィルム程度","quantity":1,"unit":"回","unitPrice":300000,"amount":300000,"note":"夜間作業"},
+        {"name":"撤去","specification":"","quantity":1,"unit":"回","unitPrice":150000,"amount":150000,"note":"夜間作業"},
+        {"name":"材料費・運搬費","specification":"","quantity":1,"unit":"式","unitPrice":192000,"amount":192000,"note":""},
+        {"name":"諸雑費","specification":"","quantity":1,"unit":"式","unitPrice":70000,"amount":70000,"note":""}
+      ]},
+      {"id":"2-2","name":"2階照明器具更新工事","quantity":1.0,"unit":"式","unitPrice":3363000,"amount":3363000,"details":[
+        {"name":"養生費","specification":"ブルーシート+フィルム程度","quantity":1,"unit":"回","unitPrice":134000,"amount":134000,"note":"昼間作業"},
+        {"name":"撤去","specification":"","quantity":1,"unit":"回","unitPrice":67000,"amount":67000,"note":"昼間作業"},
+        {"name":"養生費","specification":"ブルーシート+フィルム程度","quantity":4,"unit":"回","unitPrice":300000,"amount":1200000,"note":"夜間作業"},
+        {"name":"撤去","specification":"","quantity":4,"unit":"回","unitPrice":200000,"amount":800000,"note":"夜間作業"},
+        {"name":"エスカレーター床養生","specification":"5.5ベニヤ+プラベニヤ養生","quantity":1,"unit":"ヶ所","unitPrice":300000,"amount":300000,"note":""},
+        {"name":"天井補修","specification":"システム岩綿吸音板張替(1ケース程度)","quantity":1,"unit":"式","unitPrice":192000,"amount":192000,"note":""},
+        {"name":"材料費・運搬費","specification":"","quantity":1,"unit":"式","unitPrice":192000,"amount":192000,"note":""},
+        {"name":"諸雑費","specification":"","quantity":1,"unit":"式","unitPrice":278000,"amount":278000,"note":""}
+      ]},
+      {"id":"2-3","name":"3〜10階照明器具更新工事","quantity":8.0,"unit":"フロア","unitPrice":2273000,"amount":18184000,"details":[
+        {"name":"養生費（昼間）","specification":"フィルム程度","quantity":1,"unit":"回","unitPrice":134000,"amount":134000,"note":""},
+        {"name":"撤去（昼間）","specification":"","quantity":1,"unit":"回","unitPrice":67000,"amount":67000,"note":""},
+        {"name":"養生費（夜間）","specification":"フィルム程度","quantity":3,"unit":"回","unitPrice":300000,"amount":900000,"note":""},
+        {"name":"撤去（夜間）","specification":"","quantity":3,"unit":"回","unitPrice":200000,"amount":600000,"note":""},
+        {"name":"天井補修","specification":"システム岩綿吸音板張替","quantity":1,"unit":"式","unitPrice":192000,"amount":192000,"note":""},
+        {"name":"材料費・運搬費","specification":"","quantity":1,"unit":"式","unitPrice":192000,"amount":192000,"note":""},
+        {"name":"諸雑費","specification":"","quantity":1,"unit":"式","unitPrice":188000,"amount":188000,"note":""}
+      ]},
+      {"id":"2-4","name":"11階照明器具更新工事","quantity":1.0,"unit":"式","unitPrice":3699000,"amount":3699000,"details":[
+        {"name":"養生費（昼間）","specification":"ブルーシート+フィルム程度","quantity":1,"unit":"回","unitPrice":200000,"amount":200000,"note":""},
+        {"name":"撤去（昼間）","specification":"","quantity":1,"unit":"回","unitPrice":134000,"amount":134000,"note":""},
+        {"name":"養生費（夜間）","specification":"ブルーシート+フィルム程度","quantity":3,"unit":"回","unitPrice":400000,"amount":1200000,"note":""},
+        {"name":"撤去（夜間）","specification":"","quantity":3,"unit":"回","unitPrice":300000,"amount":900000,"note":""},
+        {"name":"天井補修","specification":"","quantity":1,"unit":"式","unitPrice":256000,"amount":256000,"note":""},
+        {"name":"天井塗装補修","specification":"","quantity":1,"unit":"式","unitPrice":256000,"amount":256000,"note":""},
+        {"name":"材料費・運搬費","specification":"","quantity":1,"unit":"式","unitPrice":448000,"amount":448000,"note":""},
+        {"name":"諸雑費","specification":"","quantity":1,"unit":"式","unitPrice":305000,"amount":305000,"note":""}
+      ]},
+      {"id":"2-5","name":"中央吹抜け階段照明器具更新工事","quantity":1.0,"unit":"式","unitPrice":1775000,"amount":1775000,"details":[
+        {"name":"階段室床・オフィス養生","specification":"ブルーシート+プラベニヤ養生","quantity":3,"unit":"回","unitPrice":300000,"amount":900000,"note":"夜間作業"},
+        {"name":"撤去","specification":"","quantity":3,"unit":"回","unitPrice":200000,"amount":600000,"note":"夜間作業"},
+        {"name":"材料費・運搬費","specification":"","quantity":1,"unit":"式","unitPrice":128000,"amount":128000,"note":""},
+        {"name":"諸雑費","specification":"","quantity":1,"unit":"式","unitPrice":147000,"amount":147000,"note":""}
+      ]}
+    ]},
+    {"id":"3","name":"電気設備工事","amount":415875400,"items":[
+      {"id":"3-1","name":"B2階照明器具更新工事","quantity":1.0,"unit":"式","unitPrice":9594292,"amount":9594292,"details":[
+        {"name":"LEDベースライト","specification":"TOSHIBA LEKT415323N-LS9 等","quantity":161,"unit":"台","unitPrice":28500,"amount":4588500,"note":"器具+施工"},
+        {"name":"非常灯","specification":"LED非常用照明器具","quantity":72,"unit":"台","unitPrice":32000,"amount":2304000,"note":"器具+施工"},
+        {"name":"誘導灯","specification":"LED誘導灯各種","quantity":17,"unit":"台","unitPrice":42000,"amount":714000,"note":"器具+施工"},
+        {"name":"既設器具撤去・処分","specification":"","quantity":250,"unit":"台","unitPrice":3500,"amount":875000,"note":""},
+        {"name":"配線工事","specification":"","quantity":1,"unit":"式","unitPrice":812792,"amount":812792,"note":""},
+        {"name":"点灯試験・調整","specification":"","quantity":1,"unit":"式","unitPrice":300000,"amount":300000,"note":""}
+      ]},
+      {"id":"3-2","name":"B1階照明器具更新工事","quantity":1.0,"unit":"式","unitPrice":10945350,"amount":10945350,"details":[
+        {"name":"LEDベースライト","specification":"TOSHIBA LEKT415323N-LS9 等","quantity":144,"unit":"台","unitPrice":28500,"amount":4104000,"note":""},
+        {"name":"LEDダウンライト","specification":"TOSHIBA LEDD-18005等","quantity":55,"unit":"台","unitPrice":18500,"amount":1017500,"note":""},
+        {"name":"非常灯","specification":"LED非常用照明器具","quantity":59,"unit":"台","unitPrice":32000,"amount":1888000,"note":""},
+        {"name":"誘導灯","specification":"LED誘導灯各種","quantity":15,"unit":"台","unitPrice":42000,"amount":630000,"note":""},
+        {"name":"既設器具撤去・処分","specification":"","quantity":273,"unit":"台","unitPrice":3500,"amount":955500,"note":""},
+        {"name":"配線工事・点灯試験","specification":"","quantity":1,"unit":"式","unitPrice":2350350,"amount":2350350,"note":""}
+      ]},
+      {"id":"3-3","name":"1階照明器具更新工事","quantity":1.0,"unit":"式","unitPrice":10900018,"amount":10900018,"details":[
+        {"name":"LEDベースライト","specification":"TOSHIBA LEKT407323N-LS9 等","quantity":96,"unit":"台","unitPrice":32000,"amount":3072000,"note":""},
+        {"name":"LEDダウンライト","specification":"各種","quantity":131,"unit":"台","unitPrice":18500,"amount":2423500,"note":""},
+        {"name":"非常灯","specification":"","quantity":36,"unit":"台","unitPrice":32000,"amount":1152000,"note":""},
+        {"name":"誘導灯","specification":"","quantity":16,"unit":"台","unitPrice":45000,"amount":720000,"note":""},
+        {"name":"既設器具撤去・処分","specification":"","quantity":279,"unit":"台","unitPrice":3500,"amount":976500,"note":""},
+        {"name":"配線工事・点灯試験","specification":"","quantity":1,"unit":"式","unitPrice":2556018,"amount":2556018,"note":""}
+      ]},
+      {"id":"3-4","name":"2階照明器具更新工事","quantity":1.0,"unit":"式","unitPrice":42222707,"amount":42222707,"details":[
+        {"name":"LEDベースライト","specification":"TOSHIBA LEKT415323N-LS9 等","quantity":497,"unit":"台","unitPrice":28500,"amount":14164500,"note":""},
+        {"name":"LEDダウンライト","specification":"各種","quantity":196,"unit":"台","unitPrice":18500,"amount":3626000,"note":""},
+        {"name":"非常灯","specification":"","quantity":72,"unit":"台","unitPrice":32000,"amount":2304000,"note":""},
+        {"name":"誘導灯","specification":"","quantity":12,"unit":"台","unitPrice":42000,"amount":504000,"note":""},
+        {"name":"既設器具撤去・処分","specification":"","quantity":777,"unit":"台","unitPrice":3500,"amount":2719500,"note":""},
+        {"name":"配線工事・制御工事","specification":"大会議室等含む","quantity":1,"unit":"式","unitPrice":15800000,"amount":15800000,"note":""},
+        {"name":"点灯試験・調整","specification":"","quantity":1,"unit":"式","unitPrice":3104707,"amount":3104707,"note":""}
+      ]},
+      {"id":"3-5","name":"3〜6階照明器具更新工事","quantity":4.0,"unit":"フロア","unitPrice":26045643,"amount":104182572,"details":[
+        {"name":"LEDベースライト","specification":"TOSHIBA LEKT415323N-LS9 等","quantity":300,"unit":"台","unitPrice":28500,"amount":8550000,"note":"1フロアあたり"},
+        {"name":"LEDダウンライト","specification":"各種","quantity":53,"unit":"台","unitPrice":18500,"amount":980500,"note":"1フロアあたり"},
+        {"name":"非常灯","specification":"","quantity":60,"unit":"台","unitPrice":32000,"amount":1920000,"note":"1フロアあたり"},
+        {"name":"誘導灯","specification":"","quantity":8,"unit":"台","unitPrice":42000,"amount":336000,"note":"1フロアあたり"},
+        {"name":"既設器具撤去・処分","specification":"","quantity":421,"unit":"台","unitPrice":3500,"amount":1473500,"note":"1フロアあたり"},
+        {"name":"配線工事・点灯試験","specification":"","quantity":1,"unit":"式","unitPrice":12785643,"amount":12785643,"note":"1フロアあたり"}
+      ]},
+      {"id":"3-6","name":"7階照明器具更新工事","quantity":1.0,"unit":"式","unitPrice":26381354,"amount":26381354,"details":[
+        {"name":"LEDベースライト","specification":"","quantity":300,"unit":"台","unitPrice":28500,"amount":8550000,"note":""},
+        {"name":"LEDダウンライト","specification":"","quantity":53,"unit":"台","unitPrice":18500,"amount":980500,"note":""},
+        {"name":"非常灯","specification":"","quantity":60,"unit":"台","unitPrice":32000,"amount":1920000,"note":""},
+        {"name":"誘導灯","specification":"","quantity":13,"unit":"台","unitPrice":42000,"amount":546000,"note":""},
+        {"name":"既設撤去・配線・試験","specification":"","quantity":1,"unit":"式","unitPrice":14384854,"amount":14384854,"note":""}
+      ]},
+      {"id":"3-7","name":"8・9階照明器具更新工事","quantity":2.0,"unit":"フロア","unitPrice":25967163,"amount":51934326,"details":[
+        {"name":"LEDベースライト","specification":"","quantity":300,"unit":"台","unitPrice":28500,"amount":8550000,"note":"1フロアあたり"},
+        {"name":"LEDダウンライト","specification":"","quantity":53,"unit":"台","unitPrice":18500,"amount":980500,"note":""},
+        {"name":"非常灯","specification":"","quantity":60,"unit":"台","unitPrice":32000,"amount":1920000,"note":""},
+        {"name":"誘導灯","specification":"","quantity":7,"unit":"台","unitPrice":42000,"amount":294000,"note":""},
+        {"name":"既設撤去・配線・試験","specification":"","quantity":1,"unit":"式","unitPrice":14222663,"amount":14222663,"note":""}
+      ]},
+      {"id":"3-8","name":"10階照明器具更新工事","quantity":1.0,"unit":"式","unitPrice":26225494,"amount":26225494,"details":[
+        {"name":"LEDベースライト","specification":"","quantity":300,"unit":"台","unitPrice":28500,"amount":8550000,"note":""},
+        {"name":"LEDダウンライト","specification":"","quantity":53,"unit":"台","unitPrice":18500,"amount":980500,"note":""},
+        {"name":"非常灯","specification":"","quantity":61,"unit":"台","unitPrice":32000,"amount":1952000,"note":""},
+        {"name":"誘導灯","specification":"","quantity":10,"unit":"台","unitPrice":42000,"amount":420000,"note":""},
+        {"name":"既設撤去・配線・試験","specification":"","quantity":1,"unit":"式","unitPrice":14322994,"amount":14322994,"note":""}
+      ]},
+      {"id":"3-9","name":"11階照明器具更新工事","quantity":1.0,"unit":"式","unitPrice":26651605,"amount":26651605,"details":[
+        {"name":"LEDベースライト","specification":"","quantity":456,"unit":"台","unitPrice":28500,"amount":12996000,"note":""},
+        {"name":"LEDダウンライト","specification":"","quantity":194,"unit":"台","unitPrice":18500,"amount":3589000,"note":""},
+        {"name":"非常灯","specification":"","quantity":73,"unit":"台","unitPrice":32000,"amount":2336000,"note":""},
+        {"name":"誘導灯","specification":"","quantity":17,"unit":"台","unitPrice":42000,"amount":714000,"note":""},
+        {"name":"既設撤去・配線・試験","specification":"","quantity":1,"unit":"式","unitPrice":7016605,"amount":7016605,"note":""}
+      ]},
+      {"id":"3-10","name":"PH階照明器具更新工事","quantity":1.0,"unit":"式","unitPrice":5590255,"amount":5590255,"details":[
+        {"name":"LEDベースライト","specification":"","quantity":57,"unit":"台","unitPrice":28500,"amount":1624500,"note":""},
+        {"name":"LEDダウンライト","specification":"","quantity":10,"unit":"台","unitPrice":18500,"amount":185000,"note":""},
+        {"name":"非常灯","specification":"","quantity":9,"unit":"台","unitPrice":32000,"amount":288000,"note":""},
+        {"name":"誘導灯","specification":"","quantity":2,"unit":"台","unitPrice":42000,"amount":84000,"note":""},
+        {"name":"既設撤去・配線・試験","specification":"","quantity":1,"unit":"式","unitPrice":3408755,"amount":3408755,"note":""}
+      ]},
+      {"id":"3-11","name":"内階段照明器具更新工事","quantity":1.0,"unit":"式","unitPrice":6110532,"amount":6110532,"details":[
+        {"name":"非常灯","specification":"階段通路誘導灯兼用","quantity":37,"unit":"台","unitPrice":35000,"amount":1295000,"note":""},
+        {"name":"既設撤去・配線・試験","specification":"","quantity":1,"unit":"式","unitPrice":4815532,"amount":4815532,"note":""}
+      ]},
+      {"id":"3-12","name":"照明制御設備工事","quantity":1.0,"unit":"式","unitPrice":94435300,"amount":94435300,"details":[
+        {"name":"照明制御システム","specification":"プログラムタイマー・調光制御","quantity":1,"unit":"式","unitPrice":48000000,"amount":48000000,"note":""},
+        {"name":"分電盤更新","specification":"","quantity":1,"unit":"式","unitPrice":28000000,"amount":28000000,"note":""},
+        {"name":"幹線・配線工事","specification":"","quantity":1,"unit":"式","unitPrice":15435300,"amount":15435300,"note":""},
+        {"name":"試験・調整","specification":"","quantity":1,"unit":"式","unitPrice":3000000,"amount":3000000,"note":""}
+      ]},
+      {"id":"3-13","name":"外構照明更新工事","quantity":1.0,"unit":"式","unitPrice":701595,"amount":701595,"details":[
+        {"name":"外構LED照明","specification":"","quantity":1,"unit":"式","unitPrice":701595,"amount":701595,"note":""}
+      ]}
+    ]},
+    {"id":"4","name":"建設副産物処分費","amount":9408000,"items":[
+      {"id":"4-1","name":"既設照明器具処分","specification":"蛍光灯・安定器含む","quantity":1.0,"unit":"式","unitPrice":6500000,"amount":6500000,"details":[]},
+      {"id":"4-2","name":"梱包材・廃材処分","specification":"","quantity":1.0,"unit":"式","unitPrice":2908000,"amount":2908000,"details":[]}
+    ]},
+    {"id":"5","name":"現場管理費","amount":38348000,"items":[]},
+    {"id":"6","name":"諸経費","amount":51770000,"items":[]}
+  ],
+  "notes":[
+    "本見積書の有効期限は提出日より3ヶ月とします",
+    "上記工事に関しては民間(七会)連合協定工事請負契約約款に準じます",
+    "本件工事の消費税率は10%で計算しております",
+    "本見積書に記載なき事項については別途見積もりとさせていただきます",
+    "夜間作業を含むため、作業時間帯は別途協議の上決定します",
+    "テナントエリアの施工スケジュールはテナント様と調整の上決定します",
+    "足場工事は吹抜け階段・エスカレーター部を含みます",
+    "工期は延べ18ヶ月（2026年8月〜2028年1月）、3期分割払い"
+  ]
+}};
+</script>
+</body>
+</html>
