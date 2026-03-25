@@ -1,1 +1,15 @@
+node_modules/
 .vercel
+.DS_Store
+20260325042410/
+assets/
+docs/
+*.pdf
+*.jpg
+*.jpeg
+*.JPEG
+*.png
+package.json
+package-lock.json
+server.js
+public/
