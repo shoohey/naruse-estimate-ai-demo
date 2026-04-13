@@ -11,8 +11,6 @@ docs/
 *.jpeg
 *.JPEG
 *.png
-package.json
-package-lock.json
-server.js
-public/
-.DS_Store
+*.dwg
+*.pptx
+座間林間/

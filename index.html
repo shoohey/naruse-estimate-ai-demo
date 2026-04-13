@@ -326,8 +326,10 @@ details.api-key-section input { flex: 1; }
 // ============================
 let uploadedFiles = [];
 let serverMode = false;
+let cloudMode = false;
 let apiKeySet = false;
 let allResults = null;
+let maxFileSizeMB = 100;
 
 // ============================
 // Init
@@ -337,6 +339,8 @@ let allResults = null;
     const res = await fetch('/api/status');
     const data = await res.json();
     serverMode = true;
+    cloudMode = data.mode === 'cloud';
+    if (data.maxFileSizeMB) maxFileSizeMB = data.maxFileSizeMB;
     if (data.hasKey) {
       apiKeySet = true;
       document.getElementById('apiKeySection').style.display = 'none';
@@ -445,12 +449,37 @@ async function startAnalysis() {
 }
 
 async function analyzeViaServer() {
-  const formData = new FormData();
-  uploadedFiles.forEach(f => formData.append('pdfs', f));
-  formData.append('projectName', document.getElementById('projectName').value);
-  formData.append('clientName', document.getElementById('clientName').value);
-
-  const response = await fetch('/api/analyze', { method: 'POST', body: formData });
+  // クラウドモード: PDFをbase64 JSONで送信（Vercel Serverless対応）
+  // ローカルモード: FormDataで送信
+  let response;
+  if (cloudMode) {
+    const totalSize = uploadedFiles.reduce((s, f) => s + f.size, 0);
+    if (totalSize > maxFileSizeMB * 1024 * 1024) {
+      addLog(`ファイルサイズが${maxFileSizeMB}MBを超えています。ファイルを分割するか、ローカルサーバーモードをご利用ください。`, 'log-error');
+      return;
+    }
+    addLog('PDFをエンコード中...', 'log-info');
+    const pdfData = [];
+    for (const f of uploadedFiles) {
+      const b64 = await fileToBase64(f);
+      pdfData.push({ name: f.name, base64: b64 });
+    }
+    response = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        pdfs: pdfData,
+        projectName: document.getElementById('projectName').value,
+        clientName: document.getElementById('clientName').value
+      })
+    });
+  } else {
+    const formData = new FormData();
+    uploadedFiles.forEach(f => formData.append('pdfs', f));
+    formData.append('projectName', document.getElementById('projectName').value);
+    formData.append('clientName', document.getElementById('clientName').value);
+    response = await fetch('/api/analyze', { method: 'POST', body: formData });
+  }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
