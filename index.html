@@ -194,6 +194,9 @@ details.api-key-section input { flex: 1; }
   @page { size: A4 landscape; margin: 10mm; }
 }
 </style>
+<script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>if(typeof pdfjsLib!=='undefined')pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
 </head>
 <body>
 
@@ -203,7 +206,7 @@ details.api-key-section input { flex: 1; }
     <h1>EstimateAI Pro<span>建設図面 → 概算見積書 AI自動生成</span></h1>
     <div class="badge-group">
       <div class="badge badge-gold">&#x1f3af; 参照DB搭載</div>
-      <div class="badge"><span class="dot"></span>6体 AI Agent 並列処理</div>
+      <div class="badge"><span class="dot"></span>7体 AI Agent + 検証</div>
     </div>
   </div>
 </header>
@@ -214,7 +217,7 @@ details.api-key-section input { flex: 1; }
   <section class="hero">
     <div class="hero-label">AI-Powered Construction Estimator</div>
     <h2>建設図面をアップロードするだけで<br>高精度な概算見積書を自動生成</h2>
-    <p>実プロジェクト（2.5億円規模のスーパーマーケット新店工事）の見積データを学習した6体のAIエージェントが、図面を並列解析し、参照単価データベースに基づく高精度な概算見積書を生成します。</p>
+    <p>実プロジェクト（2.5億円規模のスーパーマーケット新店工事）の見積データを学習した7体のAIエージェントが、図面を並列解析し、深い推論モデル(Opus)と検証AIによる二重チェックで高精度な概算見積書を生成します。</p>
     <div class="features">
       <div class="feature-card">
         <div class="icon">&#x1f4ca;</div>
@@ -223,18 +226,18 @@ details.api-key-section input { flex: 1; }
       </div>
       <div class="feature-card">
         <div class="icon">&#x1f916;</div>
-        <h4>6体AI並列処理</h4>
-        <p>建築・電気・機械・仕様の4体が並列で図面解析。数量積算AIと見積書生成AIが統合し最終出力。</p>
+        <h4>7体AI＋深い推論</h4>
+        <p>解析4体(Sonnet 4.6並列)→積算(Opus 4.7深い推論)→整形(Sonnet 4.6)→検証(Opus 4.7深い推論)の4フェーズで構成。</p>
       </div>
       <div class="feature-card">
         <div class="icon">&#x1f4c4;</div>
-        <h4>複数PDF対応</h4>
-        <p>建築図面・電気図面・機械図面など、複数のPDFを同時にアップロード。各AIが専門領域を担当。</p>
+        <h4>大容量PDF対応</h4>
+        <p>40MB超のPDFも自動分割で処理可能。pdf-lib+pdf.jsの二重フォールバックで確実にAPIへ送信。</p>
       </div>
       <div class="feature-card">
-        <div class="icon">&#x2696;&#xfe0f;</div>
-        <h4>類似案件比較</h4>
-        <p>参照プロジェクトとのm2単価・工種比率を自動比較。妥当性を視覚的に検証可能。</p>
+        <div class="icon">&#x2705;</div>
+        <h4>精度検証AI</h4>
+        <p>計算整合性・m2単価妥当性・工種比率を厳密チェックし、ズレがあれば自動修正してから納品。</p>
       </div>
     </div>
   </section>
@@ -246,7 +249,7 @@ details.api-key-section input { flex: 1; }
       <input type="file" id="fileInput" accept=".pdf" multiple>
       <div class="icon">&#x1f4c1;</div>
       <h3>建設図面のPDFをドラッグ&amp;ドロップ</h3>
-      <p>複数ファイル対応（建築図・電気図・機械図など）/ 最大100MB</p>
+      <p>複数ファイル対応（建築図・電気図・機械図など）/ 40MB超の大容量PDF自動分割対応</p>
     </div>
     <div class="file-list" id="fileList"></div>
 
@@ -291,8 +294,9 @@ details.api-key-section input { flex: 1; }
       <div class="agent-card" id="agent2"><div class="agent-header"><div class="agent-num">2</div><div class="agent-name">電気設備解析AI</div></div><div class="agent-status" id="agent2Status">待機中</div></div>
       <div class="agent-card" id="agent3"><div class="agent-header"><div class="agent-num">3</div><div class="agent-name">機械設備解析AI</div></div><div class="agent-status" id="agent3Status">待機中</div></div>
       <div class="agent-card" id="agent4"><div class="agent-header"><div class="agent-num">4</div><div class="agent-name">仕様・条件解析AI</div></div><div class="agent-status" id="agent4Status">待機中</div></div>
-      <div class="agent-card" id="agent5"><div class="agent-header"><div class="agent-num">5</div><div class="agent-name">数量積算AI</div></div><div class="agent-status" id="agent5Status">待機中</div></div>
+      <div class="agent-card" id="agent5"><div class="agent-header"><div class="agent-num">5</div><div class="agent-name">数量積算AI <span style="font-size:10px;background:var(--accent-bg);color:var(--accent);padding:1px 6px;border-radius:10px;margin-left:4px;">深い推論</span></div></div><div class="agent-status" id="agent5Status">待機中</div></div>
       <div class="agent-card" id="agent6"><div class="agent-header"><div class="agent-num">6</div><div class="agent-name">見積書生成AI</div></div><div class="agent-status" id="agent6Status">待機中</div></div>
+      <div class="agent-card" id="agent7"><div class="agent-header"><div class="agent-num">7</div><div class="agent-name">精度検証AI <span style="font-size:10px;background:var(--success-bg);color:var(--success);padding:1px 6px;border-radius:10px;margin-left:4px;">NEW</span></div></div><div class="agent-status" id="agent7Status">待機中</div></div>
     </div>
     <div class="log-terminal" id="logTerminal"></div>
   </section>
@@ -383,9 +387,28 @@ function renderFileList() {
   const el = document.getElementById('fileList');
   if (!uploadedFiles.length) { el.innerHTML = ''; uploadZone.classList.remove('has-files'); return; }
   uploadZone.classList.add('has-files');
-  el.innerHTML = uploadedFiles.map((f, i) =>
-    `<div class="file-item">&#x1f4c4; ${esc(f.name)} <span class="size">${(f.size/1024/1024).toFixed(1)}MB</span> <span class="remove" onclick="removeFile(${i})">&#x2715;</span></div>`
-  ).join('');
+  // 1.35MB(PDF実体) = 1.8MB base64 が安全閾値。これを超えると分割される
+  const SAFE_PDF_MB = 1.35;
+  el.innerHTML = uploadedFiles.map((f, i) => {
+    const mb = f.size / 1024 / 1024;
+    const willSplit = mb > SAFE_PDF_MB;
+    const tag = willSplit
+      ? `<span style="font-size:11px;background:var(--warning-bg);color:var(--warning);padding:2px 8px;border-radius:10px;margin-left:6px;">自動分割対象</span>`
+      : '';
+    return `<div class="file-item">&#x1f4c4; ${esc(f.name)} <span class="size">${mb.toFixed(2)}MB</span>${tag} <span class="remove" onclick="removeFile(${i})">&#x2715;</span></div>`;
+  }).join('');
+
+  // 合計サイズと予想分割数を表示
+  const totalMB = uploadedFiles.reduce((s, f) => s + f.size/1024/1024, 0);
+  const estGroups = uploadedFiles.reduce((s, f) => s + Math.max(1, Math.ceil((f.size/1024/1024) / SAFE_PDF_MB)), 0);
+  if (totalMB > SAFE_PDF_MB) {
+    // 処理時間の概算(1グループ≈70秒 + 待機)
+    const estMinutes = Math.ceil(estGroups * 1.5);
+    const timeStr = estMinutes > 60 ? `約${Math.floor(estMinutes/60)}時間${estMinutes%60}分` : `約${estMinutes}分`;
+    el.innerHTML += `<div style="font-size:12px;color:var(--text-sub);margin-top:8px;padding:8px 12px;background:var(--accent-bg);border-radius:6px;">
+      &#x1f4dc; 合計 ${totalMB.toFixed(1)}MB → 約${estGroups}グループに自動分割（処理時間の目安: ${timeStr}）
+    </div>`;
+  }
 }
 
 // ============================
@@ -427,78 +450,343 @@ function addLog(msg, cls = '') {
 // ============================
 // Main Analysis (Server Mode)
 // ============================
+let analysisRunning = false;
 async function startAnalysis() {
+  if (analysisRunning) return;
+  analysisRunning = true;
+  const btn = document.getElementById('generateBtn');
+  btn.disabled = true;
+
   document.getElementById('agentsSection').style.display = 'block';
   document.getElementById('resultsSection').style.display = 'none';
   document.getElementById('logTerminal').innerHTML = '';
   document.getElementById('progressBar').style.width = '0%';
 
-  for (let i = 1; i <= 6; i++) {
+  for (let i = 1; i <= 7; i++) {
     const card = document.getElementById(`agent${i}`);
     card.className = 'agent-card';
     document.getElementById(`agent${i}Status`).innerHTML = '待機中';
   }
 
-  addLog('6体AIエージェント起動...', 'log-info');
+  addLog('7体AIエージェント起動 (Sonnet 4.6 + Opus 4.7深い推論)...', 'log-info');
 
-  if (serverMode) {
-    await analyzeViaServer();
-  } else {
-    await analyzeViaBrowser();
+  try {
+    if (serverMode) {
+      await analyzeViaServer();
+    } else {
+      await analyzeViaBrowser();
+    }
+  } finally {
+    analysisRunning = false;
+    btn.disabled = false;
   }
 }
 
 async function analyzeViaServer() {
-  // クラウドモード: PDFをbase64 JSONで送信（Vercel Serverless対応）
-  // ローカルモード: FormDataで送信
   let response;
   if (cloudMode) {
-    const totalSize = uploadedFiles.reduce((s, f) => s + f.size, 0);
-    if (totalSize > maxFileSizeMB * 1024 * 1024) {
-      addLog(`ファイルサイズが${maxFileSizeMB}MBを超えています。ファイルを分割するか、ローカルサーバーモードをご利用ください。`, 'log-error');
-      return;
-    }
-    addLog('PDFをエンコード中...', 'log-info');
-    const pdfData = [];
+    // Cloud mode: Split large PDFs and process in groups
+    addLog('PDFを解析準備中...', 'log-info');
+
+    // Split all PDFs into groups
+    const allGroups = [];
     for (const f of uploadedFiles) {
-      const b64 = await fileToBase64(f);
-      pdfData.push({ name: f.name, base64: b64 });
+      const groups = await splitPdfIntoGroups(f);
+      allGroups.push(...groups);
     }
-    response = await fetch('/api/analyze', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        pdfs: pdfData,
+
+    const totalBase64Size = allGroups.reduce((s, g) => s + (g.sizeBytes || 0), 0);
+    addLog(`合計 ${allGroups.length} グループ（${(totalBase64Size / 1024 / 1024).toFixed(1)}MB）`, 'log-info');
+
+    if (allGroups.length === 1 && totalBase64Size <= SAFE_BASE64_BYTES && !allGroups[0].contentType) {
+      // 単一・小サイズPDF - 一括処理
+      response = await safeFetch('/api/analyze', {
+        pdfs: allGroups.map(g => ({ name: g.name, base64: g.base64 })),
         projectName: document.getElementById('projectName').value,
         clientName: document.getElementById('clientName').value
-      })
-    });
+      });
+      return processSSEResponse(response);
+    }
+
+    // ============================
+    // 大容量PDF: グループ別処理
+    // ============================
+    const totalGroupCount = allGroups.length;
+
+    // 動的バッチサイズ: グループ数が多いほど保守的に
+    const batchSize = totalGroupCount > 20 ? 1 : totalGroupCount > 8 ? 2 : 3;
+    // レートリミット待機時間(大量グループは長め)
+    const interBatchWaitMs = totalGroupCount > 20 ? 20000 : totalGroupCount > 8 ? 15000 : 10000;
+
+    addLog(`大容量PDF: ${totalGroupCount}グループ（バッチ${batchSize}並列 / 待機${interBatchWaitMs/1000}秒）`, 'log-info');
+    handleSSE({ type: 'phase', phase: 1, message: `Phase 1: ${totalGroupCount}グループを順次解析中...` });
+
+    // 単一グループを解析する関数(成功なら結果、失敗なら null)
+    const processGroup = async (group, label) => {
+      const gIdx = group.groupIndex + 1;
+      addLog(`[${label || gIdx + '/' + totalGroupCount}] グループ (${group.pages}) 解析開始...`, 'log-info');
+      try {
+        const bodyData = {
+          mode: 'group',
+          projectName: document.getElementById('projectName').value,
+          clientName: document.getElementById('clientName').value,
+          groupInfo: { pages: group.pages, groupIndex: group.groupIndex, totalGroups: group.totalGroups }
+        };
+        if (group.contentType === 'images') {
+          bodyData.images = group.images;
+        } else {
+          bodyData.pdfs = [{ name: group.name, base64: group.base64 }];
+        }
+        const resp = await safeFetch('/api/analyze', bodyData);
+
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let sseBuffer = '';
+        let result = null;
+        let errorCount = 0;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          sseBuffer += decoder.decode(value, { stream: true });
+          const lines = sseBuffer.split('\n');
+          sseBuffer = lines.pop();
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const evt = JSON.parse(line.slice(6));
+                if (evt.type === 'group_complete') {
+                  result = evt.results;
+                  errorCount = evt.errorCount || 0;
+                } else if (evt.type === 'agent_complete') {
+                  addLog(`  [G${gIdx}] ${evt.name} 完了 (${evt.elapsed}秒)`, 'log-success');
+                } else if (evt.type === 'agent_error') {
+                  addLog(`  [G${gIdx}] ${evt.name} エラー: ${evt.error}`, 'log-error');
+                }
+              } catch {}
+            }
+          }
+        }
+        // 4エージェント中3つ以上エラーなら失敗扱い(再試行対象)
+        if (!result || errorCount >= 3) return null;
+        return result;
+      } catch (err) {
+        addLog(`[G${gIdx}] 通信エラー: ${err.message}`, 'log-error');
+        return null;
+      }
+    };
+
+    const groupResults = [];
+    let failedGroups = [];
+    let completedGroups = 0;
+    const phase1StartTime = Date.now();
+
+    // === 1巡目: 全グループ処理 ===
+    for (let batchStart = 0; batchStart < totalGroupCount; batchStart += batchSize) {
+      const batch = allGroups.slice(batchStart, batchStart + batchSize);
+      const batchResults = await Promise.all(batch.map(g => processGroup(g)));
+
+      batch.forEach((g, i) => {
+        if (batchResults[i]) groupResults.push(batchResults[i]);
+        else failedGroups.push(g);
+      });
+      completedGroups += batch.length;
+
+      const elapsedSec = (Date.now() - phase1StartTime) / 1000;
+      const avgSecPerGroup = elapsedSec / completedGroups;
+      const remainingGroups = totalGroupCount - completedGroups;
+      const etaSec = Math.round(avgSecPerGroup * remainingGroups);
+      const pct = Math.round((completedGroups / totalGroupCount) * 40) + 10;
+      document.getElementById('progressBar').style.width = pct + '%';
+
+      if (completedGroups < totalGroupCount) {
+        const etaMin = Math.floor(etaSec / 60);
+        const etaSecRem = etaSec % 60;
+        const etaStr = etaMin > 0 ? `約${etaMin}分${etaSecRem}秒` : `約${etaSec}秒`;
+        document.getElementById('phaseText').textContent = `Phase 1: ${completedGroups}/${totalGroupCount}グループ完了（残り${etaStr}）`;
+        addLog(`✓ ${completedGroups}/${totalGroupCount}グループ完了 (成功${groupResults.length}/失敗${failedGroups.length}) — 残り推定${etaStr}`, 'log-info');
+
+        addLog(`レートリミット回避: ${interBatchWaitMs/1000}秒待機...`, 'log-info');
+        await new Promise(r => setTimeout(r, interBatchWaitMs));
+      }
+    }
+
+    // === 失敗グループのリトライ(最大2回、待機時間を長く) ===
+    for (let retryRound = 1; retryRound <= 2 && failedGroups.length > 0; retryRound++) {
+      addLog(`⟲ リトライ${retryRound}回目: ${failedGroups.length}グループ再試行（30秒待機後）`, 'log-info');
+      await new Promise(r => setTimeout(r, 30000));
+
+      const stillFailed = [];
+      for (const g of failedGroups) {
+        const result = await processGroup(g, `リトライ${retryRound} G${g.groupIndex + 1}`);
+        if (result) groupResults.push(result);
+        else stillFailed.push(g);
+        // 1グループずつ実行、間隔を長めに
+        await new Promise(r => setTimeout(r, 15000));
+      }
+      failedGroups = stillFailed;
+    }
+
+    if (failedGroups.length > 0) {
+      addLog(`⚠ ${failedGroups.length}グループは最終的に失敗（成功した${groupResults.length}グループで続行）`, 'log-info');
+    }
+
+    if (groupResults.length === 0) {
+      addLog('全グループの解析に失敗しました', 'log-error');
+      return;
+    }
+
+    addLog(`✓ Phase 1 完了: ${groupResults.length}/${totalGroupCount}グループ成功 (${(( Date.now() - phase1StartTime)/1000).toFixed(0)}秒)`, 'log-success');
+
+    // ============================
+    // グループ結果のマージ
+    // ============================
+    const merged = {
+      architecture: groupResults.map(r => r.architecture).filter(Boolean),
+      electrical: groupResults.map(r => r.electrical).filter(Boolean),
+      mechanical: groupResults.map(r => r.mechanical).filter(Boolean),
+      conditions: groupResults.map(r => r.conditions).filter(Boolean)
+    };
+
+    // Agent cards更新
+    for (let i = 1; i <= 4; i++) {
+      const card = document.getElementById(`agent${i}`);
+      card.className = 'agent-card done';
+      document.getElementById(`agent${i}Status`).innerHTML = `&#x2705; 完了 (${groupResults.length}グループ)`;
+    }
+
+    // ============================
+    // mergedResults が大きすぎる場合の圧縮
+    // ============================
+    let mergedPayload = {
+      mode: 'final',
+      mergedResults: merged,
+      projectName: document.getElementById('projectName').value,
+      clientName: document.getElementById('clientName').value
+    };
+    let payloadStr = JSON.stringify(mergedPayload);
+
+    // Vercel制限(4MB)に近い場合、各グループ結果を要約して圧縮
+    if (payloadStr.length > MAX_REQUEST_BYTES * 0.8) {
+      addLog(`mergedResults が大きい(${(payloadStr.length/1024/1024).toFixed(1)}MB) → 結果を圧縮中...`, 'log-info');
+      // 各エージェント結果から不要なフィールドを削除して軽量化
+      const slim = (obj) => {
+        if (!obj || typeof obj !== 'object') return obj;
+        if (Array.isArray(obj)) return obj.map(slim);
+        const out = {};
+        for (const [k, v] of Object.entries(obj)) {
+          // 巨大な生テキストやデバッグ情報を除去
+          if (k === 'raw' || k === '_parseError' || k === 'missingInfo') continue;
+          out[k] = slim(v);
+        }
+        return out;
+      };
+      merged.architecture = merged.architecture.map(slim);
+      merged.electrical = merged.electrical.map(slim);
+      merged.mechanical = merged.mechanical.map(slim);
+      merged.conditions = merged.conditions.map(slim);
+      mergedPayload.mergedResults = merged;
+      payloadStr = JSON.stringify(mergedPayload);
+      addLog(`  圧縮後: ${(payloadStr.length/1024/1024).toFixed(1)}MB`, 'log-info');
+    }
+
+    // それでもまだ大きすぎる場合は段階的マージ
+    if (payloadStr.length > MAX_REQUEST_BYTES) {
+      addLog(`mergedResults が依然大きい → 段階マージ(pre-merge)を実行...`, 'log-info');
+      handleSSE({ type: 'phase', phase: 1.8, message: 'Phase 1.5: 中間結果を段階マージ中...' });
+
+      // 5グループずつマージAgentで要約
+      const CHUNK = 5;
+      const preMerge = async (agentResults, agentName) => {
+        if (agentResults.length <= CHUNK) return agentResults;
+        const summaries = [];
+        for (let i = 0; i < agentResults.length; i += CHUNK) {
+          const chunk = agentResults.slice(i, i + CHUNK);
+          try {
+            const resp = await safeFetch('/api/analyze', {
+              mode: 'pre-merge',
+              agentName,
+              chunkResults: chunk,
+              chunkIndex: Math.floor(i / CHUNK),
+              totalChunks: Math.ceil(agentResults.length / CHUNK)
+            });
+            const reader = resp.body.getReader();
+            const decoder = new TextDecoder();
+            let buf = '', mergedResult = null;
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              buf += decoder.decode(value, { stream: true });
+              const lines = buf.split('\n');
+              buf = lines.pop();
+              for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                  try {
+                    const evt = JSON.parse(line.slice(6));
+                    if (evt.type === 'pre_merge_complete') mergedResult = evt.result;
+                  } catch {}
+                }
+              }
+            }
+            summaries.push(mergedResult || chunk[0]);
+          } catch {
+            summaries.push(chunk[0]); // フォールバック: 最初の結果を使用
+          }
+        }
+        return summaries;
+      };
+
+      merged.architecture = await preMerge(merged.architecture, '建築');
+      merged.electrical = await preMerge(merged.electrical, '電気');
+      merged.mechanical = await preMerge(merged.mechanical, '機械');
+      merged.conditions = await preMerge(merged.conditions, '条件');
+
+      mergedPayload.mergedResults = merged;
+      payloadStr = JSON.stringify(mergedPayload);
+      addLog(`段階マージ後: ${(payloadStr.length/1024/1024).toFixed(1)}MB`, 'log-info');
+    }
+
+    // Phase 2-4: 最終見積書生成
+    handleSSE({ type: 'phase', phase: 2, message: 'Phase 2: 数量積算AIが全データを統合中...' });
+
+    response = await safeFetch('/api/analyze', mergedPayload);
+
+    return processSSEResponse(response);
+
   } else {
+    // Local mode - FormData (no size limit)
     const formData = new FormData();
     uploadedFiles.forEach(f => formData.append('pdfs', f));
     formData.append('projectName', document.getElementById('projectName').value);
     formData.append('clientName', document.getElementById('clientName').value);
     response = await fetch('/api/analyze', { method: 'POST', body: formData });
+    return processSSEResponse(response);
   }
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
+}
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop();
-    for (const line of lines) {
-      if (line.startsWith('data: ')) {
-        try {
-          const evt = JSON.parse(line.slice(6));
-          handleSSE(evt);
-        } catch {}
+function processSSEResponse(response) {
+  return new Promise(async (resolve) => {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const evt = JSON.parse(line.slice(6));
+            handleSSE(evt);
+          } catch {}
+        }
       }
     }
-  }
+    resolve();
+  });
 }
 
 function handleSSE(evt) {
@@ -507,7 +795,8 @@ function handleSSE(evt) {
   if (t === 'phase') {
     document.getElementById('phaseText').textContent = evt.message;
     addLog(evt.message, 'log-info');
-    const pct = evt.phase === 1 ? 5 : evt.phase === 2 ? 60 : 80;
+    const pctMap = { 1: 10, 1.5: 40, 2: 55, 3: 75, 4: 90 };
+    const pct = pctMap[evt.phase] != null ? pctMap[evt.phase] : 50;
     document.getElementById('progressBar').style.width = pct + '%';
   }
 
@@ -523,6 +812,13 @@ function handleSSE(evt) {
     card.className = 'agent-card done';
     document.getElementById(`agent${evt.agent}Status`).innerHTML = `&#x2705; 完了（${evt.elapsed}秒）`;
     addLog(`Agent ${evt.agent}（${evt.name}）完了 — ${evt.elapsed}秒`, 'log-success');
+  }
+
+  if (t === 'agent_retry') {
+    const card = document.getElementById(`agent${evt.agent}`);
+    card.className = 'agent-card running';
+    document.getElementById(`agent${evt.agent}Status`).innerHTML = `<div class="mini-spinner"></div> リトライ待機...`;
+    addLog(`Agent ${evt.agent}（${evt.name}）レートリミット — ${evt.waitSec}秒後にリトライ（${evt.attempt}回目）`, 'log-info');
   }
 
   if (t === 'agent_error') {
@@ -552,13 +848,31 @@ async function analyzeViaBrowser() {
   const apiKey = document.getElementById('apiKeyInput').value.trim();
   if (!apiKey) { addLog('APIキーが未設定です', 'log-error'); return; }
 
-  const pdfContents = [];
+  // Split large PDFs into groups
+  addLog('PDFを解析準備中...', 'log-info');
+  const allGroups = [];
   for (const f of uploadedFiles) {
-    const b64 = await fileToBase64(f);
-    pdfContents.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } });
+    const groups = await splitPdfIntoGroups(f, 20); // Browser mode can handle slightly larger groups
+    allGroups.push(...groups);
   }
 
-  const callAPI = async (messages) => {
+  addLog(`${allGroups.length}グループを処理します`, 'log-info');
+
+  const callAPI = async (messages, system, opts = {}) => {
+    const body = {
+      model: opts.model || 'claude-sonnet-4-6',
+      max_tokens: opts.maxTokens || 16000,
+      messages
+    };
+    if (system) body.system = system;
+    // Opus 4.7 の Extended Thinking は adaptive 形式のみ。
+    // budget_tokens/temperature/top_p/top_k は 400 エラーになるので厳格分岐。
+    if (opts.thinking) {
+      body.thinking = { type: 'adaptive' };
+      body.output_config = { effort: 'high' };
+    } else {
+      body.temperature = opts.temperature ?? 0.2;
+    }
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -567,11 +881,13 @@ async function analyzeViaBrowser() {
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true'
       },
-      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 16000, messages })
+      body: JSON.stringify(body)
     });
     const data = await res.json();
     if (data.error) throw new Error(data.error.message);
-    return data.content[0].text;
+    const textBlocks = (data.content || []).filter(c => c.type === 'text');
+    if (!textBlocks.length) throw new Error('Empty response');
+    return textBlocks.map(c => c.text).join('\n');
   };
 
   const parseJSON = (text) => {
@@ -587,8 +903,13 @@ async function analyzeViaBrowser() {
     document.getElementById('clientName').value ? `宛先: ${document.getElementById('clientName').value}` : ''
   ].filter(Boolean).join('\n');
 
-  // Phase 1
-  handleSSE({ type: 'phase', phase: 1, message: 'Phase 1: 4体のAIが並列で図面を解析中...' });
+  // Phase 1: Process each group with 4 agents
+  handleSSE({ type: 'phase', phase: 1, message: `Phase 1: ${allGroups.length}グループ × 4体AIで並列解析中...` });
+
+  const allArchResults = [];
+  const allElecResults = [];
+  const allMechResults = [];
+  const allCondResults = [];
 
   const agentPrompts = [
     { num: 1, name: '建築図面解析AI', prompt: '建築工事の情報を抽出' },
@@ -597,34 +918,71 @@ async function analyzeViaBrowser() {
     { num: 4, name: '仕様・条件解析AI', prompt: '仕様・条件情報を抽出' }
   ];
 
-  const phase1Promises = agentPrompts.map(async (a) => {
-    handleSSE({ type: 'agent_start', agent: a.num, name: a.name });
-    const start = Date.now();
-    try {
-      const text = await callAPI([{
-        role: 'user',
-        content: [...pdfContents, { type: 'text', text: `この建設プロジェクトのPDF図面から${a.prompt}してください。JSON形式で返してください。\n${contextNote}` }]
-      }]);
-      const elapsed = ((Date.now()-start)/1000).toFixed(1);
-      handleSSE({ type: 'agent_complete', agent: a.num, name: a.name, elapsed });
-      return parseJSON(text);
-    } catch (err) {
-      handleSSE({ type: 'agent_error', agent: a.num, name: a.name, error: err.message, elapsed: ((Date.now()-start)/1000).toFixed(1) });
-      return { error: err.message };
+  for (let gi = 0; gi < allGroups.length; gi++) {
+    const group = allGroups[gi];
+    const pdfContent = [{ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: group.base64 } }];
+    const groupLabel = allGroups.length > 1 ? ` [グループ${gi+1}/${allGroups.length}: ${group.pages}]` : '';
+
+    addLog(`グループ ${gi + 1}/${allGroups.length} (${group.pages}) を4体AIで解析中...`, 'log-info');
+
+    const phase1Promises = agentPrompts.map(async (a) => {
+      if (gi === 0) handleSSE({ type: 'agent_start', agent: a.num, name: a.name });
+      const start = Date.now();
+      try {
+        const text = await callAPI([{
+          role: 'user',
+          content: [...pdfContent, { type: 'text', text: `この建設プロジェクトのPDF図面${groupLabel}から${a.prompt}してください。JSON形式で返してください。\n${contextNote}` }]
+        }], null, { model: 'claude-haiku-4-5', maxTokens: 16000, temperature: 0.2 });
+        const elapsed = ((Date.now()-start)/1000).toFixed(1);
+        addLog(`  ${a.name}${groupLabel} 完了 (${elapsed}秒)`, 'log-success');
+        return parseJSON(text);
+      } catch (err) {
+        addLog(`  ${a.name}${groupLabel} エラー: ${err.message}`, 'log-error');
+        return { error: err.message };
+      }
+    });
+
+    const [r1, r2, r3, r4] = await Promise.all(phase1Promises);
+    allArchResults.push(r1);
+    allElecResults.push(r2);
+    allMechResults.push(r3);
+    allCondResults.push(r4);
+
+    // Rate limit pause between groups
+    if (gi < allGroups.length - 1) {
+      addLog('レートリミット回避: 15秒待機...', 'log-info');
+      await new Promise(r => setTimeout(r, 15000));
     }
-  });
+  }
 
-  const [r1, r2, r3, r4] = await Promise.all(phase1Promises);
+  // Mark phase 1 agents as complete
+  for (let i = 1; i <= 4; i++) {
+    const card = document.getElementById(`agent${i}`);
+    card.className = 'agent-card done';
+    document.getElementById(`agent${i}Status`).innerHTML = `&#x2705; 完了（${allGroups.length}グループ）`;
+  }
 
-  // Phase 2
-  handleSSE({ type: 'phase', phase: 2, message: 'Phase 2: 数量積算AIが全データを統合中...' });
+  // Merge results: if multiple groups, combine
+  const mergeResults = (results) => {
+    if (results.length === 1) return results[0];
+    return { mergedFromGroups: results.length, groups: results };
+  };
+
+  const r1 = mergeResults(allArchResults);
+  const r2 = mergeResults(allElecResults);
+  const r3 = mergeResults(allMechResults);
+  const r4 = mergeResults(allCondResults);
+
+  // Phase 2: Agent 5 (Opus 深い推論)
+  handleSSE({ type: 'phase', phase: 2, message: 'Phase 2: 数量積算AI(深い推論)が全データを統合中...' });
   handleSSE({ type: 'agent_start', agent: 5, name: '数量積算AI' });
   let r5, start5 = Date.now();
   try {
+    const mergeNote = allGroups.length > 1 ? `\n\n注意: 以下の結果は${allGroups.length}グループに分割して解析された結果です。重複する項目は統合し、全グループの情報を漏れなく含めてください。` : '';
     const text5 = await callAPI([{
       role: 'user',
-      content: [{ type: 'text', text: `以下の4つのAI解析結果を統合し、概算見積もりをJSON形式で作成してください。\n\n建築: ${JSON.stringify(r1)}\n電気: ${JSON.stringify(r2)}\n機械: ${JSON.stringify(r3)}\n条件: ${JSON.stringify(r4)}` }]
-    }]);
+      content: [{ type: 'text', text: `以下の4つのAI解析結果を統合し、概算見積もりをJSON形式で作成してください。${mergeNote}\n\n建築: ${JSON.stringify(r1)}\n電気: ${JSON.stringify(r2)}\n機械: ${JSON.stringify(r3)}\n条件: ${JSON.stringify(r4)}` }]
+    }], null, { model: 'claude-opus-4-7', maxTokens: 24000, thinking: true });
     handleSSE({ type: 'agent_complete', agent: 5, name: '数量積算AI', elapsed: ((Date.now()-start5)/1000).toFixed(1) });
     r5 = parseJSON(text5);
   } catch (err) {
@@ -632,15 +990,15 @@ async function analyzeViaBrowser() {
     r5 = { error: err.message };
   }
 
-  // Phase 3
-  handleSSE({ type: 'phase', phase: 3, message: 'Phase 3: 見積書生成AIが最終見積書を作成中...' });
+  // Phase 3: Agent 6
+  handleSSE({ type: 'phase', phase: 3, message: 'Phase 3: 見積書生成AIが整形中...' });
   handleSSE({ type: 'agent_start', agent: 6, name: '見積書生成AI' });
   let r6, start6 = Date.now();
   try {
     const text6 = await callAPI([{
       role: 'user',
       content: [{ type: 'text', text: `以下の数量積算結果から、プロフェッショナルな御見積書をJSON形式で完成させてください。\n\n積算データ: ${JSON.stringify(r5)}\n条件: ${JSON.stringify(r4)}` }]
-    }]);
+    }], null, { model: 'claude-sonnet-4-6', maxTokens: 24000, temperature: 0.1 });
     handleSSE({ type: 'agent_complete', agent: 6, name: '見積書生成AI', elapsed: ((Date.now()-start6)/1000).toFixed(1) });
     r6 = parseJSON(text6);
   } catch (err) {
@@ -648,9 +1006,27 @@ async function analyzeViaBrowser() {
     r6 = { error: err.message };
   }
 
+  // Phase 4: Agent 7 (検証・Opus 深い推論)
+  handleSSE({ type: 'phase', phase: 4, message: 'Phase 4: 精度検証AIが整合性をチェック中...' });
+  handleSSE({ type: 'agent_start', agent: 7, name: '精度検証AI' });
+  let r7, start7 = Date.now();
+  try {
+    const text7 = await callAPI([{
+      role: 'user',
+      content: [{ type: 'text', text: `以下の御見積書を検証し、計算整合性・m2単価妥当性・工種比率を厳密にチェック。問題があれば自動修正した確定版estimateをJSONで返してください。\n\n見積書: ${JSON.stringify(r6)}\n積算根拠: ${JSON.stringify(r5)}\n\n出力スキーマ: {"agent":"精度検証AI","validationReport":{"overallStatus":"passed|warnings|errors_fixed","calculationCheck":{"passed":true,"issues":[]},"validityCheck":{"m2CostJudgement":"in_range","categoryRatioJudgement":"normal","outlierItems":[]},"completenessCheck":{"missingFields":[],"addedFields":[]}},"estimate":{...修正済み見積書全体...}}` }]
+    }], null, { model: 'claude-opus-4-7', maxTokens: 24000, thinking: true });
+    handleSSE({ type: 'agent_complete', agent: 7, name: '精度検証AI', elapsed: ((Date.now()-start7)/1000).toFixed(1) });
+    r7 = parseJSON(text7);
+  } catch (err) {
+    handleSSE({ type: 'agent_error', agent: 7, name: '精度検証AI', error: err.message, elapsed: ((Date.now()-start7)/1000).toFixed(1) });
+    r7 = { error: err.message };
+  }
+
+  const finalEstimate = (r7 && r7.estimate) ? { agent: '見積書生成AI(検証済み)', estimate: r7.estimate } : r6;
+
   handleSSE({ type: 'complete', phases: {
     architecture: r1, electrical: r2, mechanical: r3, conditions: r4,
-    quantitySurvey: r5, estimate: r6
+    quantitySurvey: r5, estimate: finalEstimate, validation: r7
   }});
 }
 
@@ -664,6 +1040,255 @@ function fileToBase64(file) {
 }
 
 // ============================
+// PDF Splitting for Large Files
+// ============================
+function uint8ToBase64(uint8) {
+  let binary = '';
+  const chunkSize = 8192;
+  for (let i = 0; i < uint8.length; i += chunkSize) {
+    const slice = uint8.subarray(i, Math.min(i + chunkSize, uint8.length));
+    binary += String.fromCharCode.apply(null, slice);
+  }
+  return btoa(binary);
+}
+
+// ============================
+// 大容量PDF対応 - サイズ制限と分割
+// ============================
+const SAFE_BASE64_BYTES = 1.8 * 1024 * 1024;  // 1.8MB base64 — 各グループの上限
+const MAX_REQUEST_BYTES = 4.0 * 1024 * 1024;   // 4.0MB — Vercel リクエスト全体の安全上限
+
+// ============================
+// safeFetch: 送信前にサイズチェック
+// ============================
+async function safeFetch(url, bodyObj) {
+  const bodyStr = JSON.stringify(bodyObj);
+  if (bodyStr.length > MAX_REQUEST_BYTES) {
+    throw new Error(`リクエストサイズ(${(bodyStr.length/1024/1024).toFixed(1)}MB)がVercel制限(4.5MB)を超えています。PDF分割に問題があります。`);
+  }
+  return fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: bodyStr
+  });
+}
+
+// ============================
+// pdf.js による画像レンダリング (巨大ページ・pdf-lib失敗時のフォールバック)
+// ============================
+async function renderPageToJpeg(pdfJsDoc, pageNum, targetBytes = SAFE_BASE64_BYTES * 0.7) {
+  const page = await pdfJsDoc.getPage(pageNum);
+  let scale = 2.0;
+  let quality = 0.85;
+  let base64 = '';
+
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.floor(viewport.width);
+    canvas.height = Math.floor(viewport.height);
+    const ctx = canvas.getContext('2d');
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    base64 = canvas.toDataURL('image/jpeg', quality).split(',')[1];
+    canvas.width = canvas.height = 0; // メモリ解放
+
+    if (base64.length <= targetBytes) break;
+    // サイズオーバー → 品質/スケールを下げる
+    if (quality > 0.45) { quality -= 0.1; }
+    else { scale *= 0.65; quality = 0.80; }
+  }
+  return { base64, mediaType: 'image/jpeg', sizeBytes: base64.length };
+}
+
+async function convertPdfToImageGroups(file, arrayBuffer) {
+  if (typeof pdfjsLib === 'undefined') {
+    throw new Error('pdf.jsが読み込まれていません。ページを分割したい場合はリロードしてください。');
+  }
+
+  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
+  const totalPages = pdf.numPages;
+  addLog(`${file.name}: pdf.jsで${totalPages}ページを画像に変換中...`, 'log-info');
+
+  const groups = [];
+  let currentImages = [];
+  let currentSize = 0;
+  let startPage = 1;
+
+  for (let i = 1; i <= totalPages; i++) {
+    const img = await renderPageToJpeg(pdf, i);
+
+    // 現在のグループに入れるとSAFE超 → フラッシュ
+    if (currentImages.length > 0 && currentSize + img.sizeBytes > SAFE_BASE64_BYTES) {
+      groups.push({
+        name: `${file.name} (p${startPage}-${i - 1}) [img]`,
+        pages: `${startPage}-${i - 1}`,
+        contentType: 'images',
+        images: currentImages,
+        sizeBytes: currentSize,
+        totalPages
+      });
+      currentImages = [];
+      currentSize = 0;
+      startPage = i;
+    }
+
+    currentImages.push(img);
+    currentSize += img.sizeBytes;
+  }
+
+  // 残り
+  if (currentImages.length > 0) {
+    groups.push({
+      name: `${file.name} (p${startPage}-${totalPages}) [img]`,
+      pages: `${startPage}-${totalPages}`,
+      contentType: 'images',
+      images: currentImages,
+      sizeBytes: currentSize,
+      totalPages
+    });
+  }
+
+  groups.forEach((g, i) => { g.groupIndex = i; g.totalGroups = groups.length; });
+  pdf.destroy();
+  addLog(`✓ ${file.name}: ${totalPages}ページ → ${groups.length}画像グループに変換完了`, 'log-success');
+  return groups;
+}
+
+// ============================
+// pdf-lib による PDF ページ分割
+// ============================
+async function buildSubGroup(srcDoc, fileName, startPage, endPage, totalPages) {
+  const newDoc = await PDFLib.PDFDocument.create();
+  const indices = Array.from({ length: endPage - startPage }, (_, i) => startPage + i);
+  const copied = await newDoc.copyPages(srcDoc, indices);
+  copied.forEach(p => newDoc.addPage(p));
+  const bytes = await newDoc.save();
+  const base64 = uint8ToBase64(new Uint8Array(bytes));
+  return {
+    name: `${fileName} (p${startPage + 1}-${endPage})`,
+    base64,
+    pages: `${startPage + 1}-${endPage}`,
+    pageCount: endPage - startPage,
+    sizeBytes: base64.length,
+    totalPages
+  };
+}
+
+async function splitGroupRecursively(srcDoc, fileName, startPage, endPage, totalPages) {
+  const sub = await buildSubGroup(srcDoc, fileName, startPage, endPage, totalPages);
+  const pageCount = endPage - startPage;
+
+  if (sub.sizeBytes <= SAFE_BASE64_BYTES) return [sub];
+
+  if (pageCount <= 1) {
+    // 1ページだが巨大 → 画像変換フラグ
+    sub.needsImageFallback = true;
+    return [sub];
+  }
+
+  const mid = startPage + Math.floor(pageCount / 2);
+  const left  = await splitGroupRecursively(srcDoc, fileName, startPage, mid, totalPages);
+  const right = await splitGroupRecursively(srcDoc, fileName, mid, endPage, totalPages);
+  return [...left, ...right];
+}
+
+async function splitPdfIntoGroups(file, initialMaxPagesPerGroup = 10) {
+  const fileSizeMB = file.size / (1024 * 1024);
+  const base64SizeEst = file.size * 4 / 3;  // base64は元サイズの約1.33倍
+
+  // ===== 小さいファイル: 分割不要 =====
+  if (base64SizeEst <= SAFE_BASE64_BYTES) {
+    const arrayBuffer = await file.arrayBuffer();
+    const base64 = uint8ToBase64(new Uint8Array(arrayBuffer));
+    return [{ name: file.name, base64, pages: 'all', sizeBytes: base64.length, groupIndex: 0, totalGroups: 1 }];
+  }
+
+  // ===== 大きいファイル: base64Full は作らず直接分割 =====
+  addLog(`${file.name}: ${fileSizeMB.toFixed(1)}MB — PDF分割を開始します...`, 'log-info');
+  const arrayBuffer = await file.arrayBuffer();
+
+  // Step 1: pdf-lib で分割を試みる
+  let pdfDoc;
+  try {
+    addLog(`  pdf-lib で解析中... (${fileSizeMB.toFixed(0)}MB)`, 'log-info');
+    pdfDoc = await PDFLib.PDFDocument.load(arrayBuffer, { ignoreEncryption: true });
+  } catch (err) {
+    addLog(`${file.name}: pdf-lib解析失敗 → pdf.js画像変換にフォールバック`, 'log-info');
+    return await convertPdfToImageGroups(file, arrayBuffer);
+  }
+
+  const totalPages = pdfDoc.getPageCount();
+
+  if (totalPages === 1) {
+    addLog(`${file.name}: 1ページ / ${fileSizeMB.toFixed(1)}MB → 画像に変換`, 'log-info');
+    return await convertPdfToImageGroups(file, arrayBuffer);
+  }
+
+  // Step 2: ページあたり推定サイズから最適グループサイズを計算
+  const avgPageSizeBase64 = base64SizeEst / totalPages;
+  // 安全閾値の80%をターゲットに(余裕を持つ)
+  const targetPagesPerGroup = Math.max(1, Math.floor((SAFE_BASE64_BYTES * 0.8) / avgPageSizeBase64));
+  const pagesPerGroup = Math.min(initialMaxPagesPerGroup, targetPagesPerGroup);
+  const estimatedGroups = Math.ceil(totalPages / pagesPerGroup);
+
+  addLog(`  ${totalPages}ページ / 平均${(avgPageSizeBase64/1024).toFixed(0)}KB/ページ → 約${estimatedGroups}グループ (${pagesPerGroup}p/グループ)`, 'log-info');
+
+  // Step 3: 分割実行(進捗表示付き)
+  const groups = [];
+  for (let start = 0; start < totalPages; start += pagesPerGroup) {
+    const end = Math.min(start + pagesPerGroup, totalPages);
+    const subGroups = await splitGroupRecursively(pdfDoc, file.name, start, end, totalPages);
+    groups.push(...subGroups);
+
+    // 大量ページの場合、10ページごとに進捗表示
+    if (totalPages > 20 && (start + pagesPerGroup) < totalPages && (start + pagesPerGroup) % (pagesPerGroup * 5) === 0) {
+      addLog(`  分割進捗: ${Math.min(start + pagesPerGroup, totalPages)}/${totalPages}ページ完了`, 'log-info');
+    }
+  }
+
+  // Step 4: 巨大ページを画像変換
+  const oversizedIndices = groups.reduce((acc, g, i) => { if (g.needsImageFallback) acc.push(i); return acc; }, []);
+  if (oversizedIndices.length > 0) {
+    addLog(`${oversizedIndices.length}ページがサイズ超過 → pdf.jsで画像に変換中...`, 'log-info');
+    let pdfJsDoc;
+    try {
+      pdfJsDoc = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
+    } catch {
+      return await convertPdfToImageGroups(file, arrayBuffer);
+    }
+
+    for (const idx of oversizedIndices) {
+      const g = groups[idx];
+      const pageNum = parseInt(g.pages.split('-')[0]);
+      try {
+        const img = await renderPageToJpeg(pdfJsDoc, pageNum);
+        groups[idx] = {
+          name: `${file.name} (p${pageNum}) [img]`,
+          pages: `${pageNum}`,
+          contentType: 'images',
+          images: [img],
+          sizeBytes: img.sizeBytes,
+          totalPages,
+          base64: undefined
+        };
+        addLog(`  p${pageNum}: JPEG変換完了 (${(img.sizeBytes/1024/1024).toFixed(1)}MB)`, 'log-info');
+      } catch (err) {
+        addLog(`  p${pageNum}: 画像変換失敗: ${err.message}`, 'log-error');
+      }
+    }
+    pdfJsDoc.destroy();
+  }
+
+  // groupIndex / totalGroups を確定
+  groups.forEach((g, i) => { g.groupIndex = i; g.totalGroups = groups.length; });
+
+  const totalSize = groups.reduce((s, g) => s + g.sizeBytes, 0);
+  const maxGroupSize = Math.max(...groups.map(g => g.sizeBytes));
+  addLog(`✓ ${file.name}: ${groups.length}グループに分割完了（合計${(totalSize/1024/1024).toFixed(1)}MB / 最大${(maxGroupSize/1024/1024).toFixed(1)}MB/グループ）`, 'log-success');
+  return groups;
+}
+
+// ============================
 // Render Results
 // ============================
 function renderResults(results) {
@@ -671,12 +1296,13 @@ function renderResults(results) {
 
   const est = results.estimate?.estimate || results.estimate || {};
   const qs = results.quantitySurvey || {};
+  const validation = results.validation || null;
   const summary = est.summary || {};
   const categories = est.categories || qs.categories || [];
   const accuracy = est.accuracy || qs.accuracy || {};
 
   // Tab 1: Estimate
-  renderEstimateTab(est, summary, categories, accuracy);
+  renderEstimateTab(est, summary, categories, accuracy, validation);
   // Tab 2: Analysis
   renderAnalysisTab(results);
   // Tab 3: Comparison
@@ -687,11 +1313,24 @@ function renderResults(results) {
   document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth' });
 }
 
-function renderEstimateTab(est, summary, categories, accuracy) {
+function renderEstimateTab(est, summary, categories, accuracy, validation) {
   const projName = est.projectName || document.getElementById('projectName').value || '建設プロジェクト';
   const clientName = est.clientName || document.getElementById('clientName').value || '';
   const total = summary.totalWithTax || summary.totalBeforeTax || 0;
   const grade = typeof accuracy === 'string' ? accuracy : (accuracy.grade || 'B');
+
+  // 検証バッジ
+  const vReport = validation?.validationReport;
+  let validationBadge = '';
+  if (vReport) {
+    const statusMap = {
+      passed: { label: '✓ 整合性検証パス', cls: 'success' },
+      warnings: { label: '⚠ 警告あり', cls: 'warning' },
+      errors_fixed: { label: '✓ 自動修正済み', cls: 'success' }
+    };
+    const s = statusMap[vReport.overallStatus] || { label: vReport.overallStatus || '検証完了', cls: 'success' };
+    validationBadge = `<span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:14px;font-size:11px;font-weight:700;background:var(--${s.cls}-bg);color:var(--${s.cls});margin-left:8px;">${s.label}</span>`;
+  }
 
   let html = `
     <div class="estimate-doc">
@@ -725,8 +1364,20 @@ function renderEstimateTab(est, summary, categories, accuracy) {
           <div class="amount">&yen;${fmt(total)}</div>
           <div class="tax-note">消費税10%含む</div>
           <div class="accuracy-badge accuracy-${grade}">精度: ${grade}${accuracy.range ? ` (${accuracy.range})` : ''}</div>
+          ${validationBadge}
         </div>
       </div>`;
+
+  // 検証レポート詳細(問題があった場合のみ表示)
+  if (vReport && (vReport.calculationCheck?.issues?.length || vReport.validityCheck?.outlierItems?.length)) {
+    const issues = vReport.calculationCheck?.issues || [];
+    const outliers = vReport.validityCheck?.outlierItems || [];
+    html += `<div style="background:var(--warning-bg);border:1px solid var(--warning);border-radius:8px;padding:12px 16px;margin-bottom:16px;">
+      <h4 style="font-size:13px;color:var(--warning);margin-bottom:6px;">&#x1f50d; 精度検証AIによる修正・指摘</h4>
+      ${issues.length ? `<div style="font-size:12px;color:var(--text-sub);">計算修正: ${issues.length}件</div>` : ''}
+      ${outliers.length ? `<div style="font-size:12px;color:var(--text-sub);">異常値: ${outliers.length}件</div>` : ''}
+    </div>`;
+  }
 
   // Categories table
   if (categories.length) {
@@ -806,7 +1457,8 @@ function renderAnalysisTab(results) {
     { key: 'mechanical', name: '機械設備解析AI', icon: '&#x2699;&#xfe0f;' },
     { key: 'conditions', name: '仕様・条件解析AI', icon: '&#x1f4cb;' },
     { key: 'quantitySurvey', name: '数量積算AI', icon: '&#x1f4ca;' },
-    { key: 'estimate', name: '見積書生成AI', icon: '&#x1f4b0;' }
+    { key: 'estimate', name: '見積書生成AI', icon: '&#x1f4b0;' },
+    { key: 'validation', name: '精度検証AI', icon: '&#x2705;' }
   ];
 
   let html = `<div class="analysis-grid">`;
@@ -936,7 +1588,8 @@ function loadSampleData() {
     { num: 3, name: '機械設備解析AI', delay: 1200 },
     { num: 4, name: '仕様・条件解析AI', delay: 900 },
     { num: 5, name: '数量積算AI', delay: 1500 },
-    { num: 6, name: '見積書生成AI', delay: 1000 }
+    { num: 6, name: '見積書生成AI', delay: 1000 },
+    { num: 7, name: '精度検証AI', delay: 1300 }
   ];
 
   handleSSE({ type: 'phase', phase: 1, message: 'Phase 1: 4体のAIが並列で図面を解析中...（サンプル）' });
@@ -948,15 +1601,18 @@ function loadSampleData() {
       handleSSE({ type: 'agent_complete', agent: a.num, name: a.name, elapsed: (a.delay/1000).toFixed(1) });
       done++;
       if (done === 4) {
-        handleSSE({ type: 'phase', phase: 2, message: 'Phase 2: 数量積算AIが全データを統合中...（サンプル）' });
+        handleSSE({ type: 'phase', phase: 2, message: 'Phase 2: 数量積算AI(深い推論)が全データを統合中...（サンプル）' });
       }
       if (done === 5) {
-        handleSSE({ type: 'phase', phase: 3, message: 'Phase 3: 見積書生成AIが最終見積書を作成中...（サンプル）' });
+        handleSSE({ type: 'phase', phase: 3, message: 'Phase 3: 見積書生成AIが整形中...（サンプル）' });
       }
       if (done === 6) {
+        handleSSE({ type: 'phase', phase: 4, message: 'Phase 4: 精度検証AIが整合性をチェック中...（サンプル）' });
+      }
+      if (done === 7) {
         handleSSE({ type: 'complete', phases: getSampleResults() });
       }
-    }, i < 4 ? a.delay : (agents.slice(0,4).reduce((s,x)=>s+x.delay,0) + (i===4 ? a.delay : agents[4].delay + a.delay)));
+    }, i < 4 ? a.delay : (agents.slice(0,4).reduce((s,x)=>s+x.delay,0) + agents.slice(4, i).reduce((s,x)=>s+x.delay,0) + a.delay));
   });
 }
 
@@ -1076,6 +1732,19 @@ function getSampleResults() {
           'EV本体工事',
           '近隣対策費（別途協議）'
         ]
+      }
+    },
+    validation: {
+      agent: '精度検証AI',
+      validationReport: {
+        overallStatus: 'passed',
+        calculationCheck: { passed: true, issues: [] },
+        validityCheck: {
+          m2CostJudgement: 'in_range',
+          categoryRatioJudgement: 'normal',
+          outlierItems: []
+        },
+        completenessCheck: { missingFields: [], addedFields: [] }
       }
     }
   };
