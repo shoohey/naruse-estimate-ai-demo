@@ -152,11 +152,21 @@ async function callClaude(apiKey, userContent, systemPrompt, opts = {}) {
 async function callClaudeWithRetry(apiKey, userContent, systemPrompt, opts, send, agentNum, agentName) {
   const maxRetries = (opts && opts.maxRetries != null) ? opts.maxRetries : 4;
   const baseWait = (opts && opts.baseWaitSec != null) ? opts.baseWaitSec : 30;
+  let currentOpts = { ...opts };
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      return await callClaude(apiKey, userContent, systemPrompt, opts);
+      return await callClaude(apiKey, userContent, systemPrompt, currentOpts);
     } catch (err) {
       const recoverable = err.isRateLimit || err.isOverloaded || err.status === 503 || err.status === 504;
+      // Opus 4.7 の thinking/sampling 形式不一致(400) は 1 度だけ thinking を無効化して再試行
+      const isOpusFormatErr = err.status === 400 && currentOpts.thinking &&
+        (/thinking\.type\.(enabled|adaptive)|output_config\.effort|temperature|top_p|top_k/i.test(err.message || ''));
+      if (isOpusFormatErr && attempt < maxRetries) {
+        if (send) send('agent_retry', { agent: agentNum, name: agentName, attempt: attempt + 1, waitSec: 2, reason: 'opus_format_fallback' });
+        currentOpts = { ...currentOpts, thinking: false };
+        await delay(2000);
+        continue;
+      }
       if (recoverable && attempt < maxRetries) {
         const waitSec = Math.min(60, (attempt + 1) * (err.isRateLimit ? baseWait : Math.max(5, baseWait / 3)));
         if (send) send('agent_retry', { agent: agentNum, name: agentName, attempt: attempt + 1, waitSec, reason: err.isRateLimit ? 'rate_limit' : 'overloaded' });

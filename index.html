@@ -470,6 +470,31 @@ async function startAnalysis() {
 
   addLog('7体AIエージェント起動 (Sonnet 4.6 + Opus 4.7深い推論)...', 'log-info');
 
+  // Phase 0: スモークテスト (serverMode のみ) — 3モデルが生きているか確認してから本番実行
+  if (serverMode && cloudMode) {
+    try {
+      addLog('Phase 0: APIスモークテスト中 (3モデルの接続確認)...', 'log-info');
+      // status=500 でも JSON が返るので smoke.ok は問わず body を読む
+      const smoke = await fetch('/api/status?check=api', { method: 'GET' });
+      const data = await smoke.json().catch(() => ({}));
+      const check = data.check || {};
+      const modelChecks = { haikuFast: check.haikuFast, sonnetPrimary: check.sonnetPrimary, opusThinking: check.opusThinking };
+      const failed = Object.entries(modelChecks).filter(([_, v]) => v && !v.ok);
+      if (failed.length > 0) {
+        failed.forEach(([model, info]) => {
+          addLog(`  ⚠ ${model}: ${info.error || 'NG'}`, 'log-error');
+        });
+        addLog('一部モデルが応答していません。このまま続行しますが失敗するグループが出る可能性があります', 'log-info');
+      } else if (check.ok) {
+        addLog('  ✓ 全3モデル正常 (Haiku 4.5 / Sonnet 4.6 / Opus 4.7)', 'log-success');
+      } else {
+        addLog('  スモークテスト結果が不明。続行します', 'log-info');
+      }
+    } catch (e) {
+      addLog(`スモークテスト失敗 (無視して続行): ${e.message}`, 'log-info');
+    }
+  }
+
   try {
     if (serverMode) {
       await analyzeViaServer();
@@ -522,6 +547,17 @@ async function analyzeViaServer() {
     handleSSE({ type: 'phase', phase: 1, message: `Phase 1: ${totalGroupCount}グループを順次解析中...` });
 
     // 単一グループを解析する関数(成功なら結果、失敗なら null)
+    const failureReasons = { rate_limit: 0, overloaded: 0, format: 0, timeout: 0, network: 0, other: 0 };
+    const classifyErr = (msg) => {
+      if (!msg) return 'other';
+      if (/rate.?limit|429/i.test(msg)) return 'rate_limit';
+      if (/overloaded|529|503/i.test(msg)) return 'overloaded';
+      if (/thinking\.type|output_config|フォーマット不一致|temperature|top_p|top_k/i.test(msg)) return 'format';
+      if (/timeout|timed.?out|504/i.test(msg)) return 'timeout';
+      if (/network|fetch|ECONNRESET|ENOTFOUND/i.test(msg)) return 'network';
+      return 'other';
+    };
+
     const processGroup = async (group, label) => {
       const gIdx = group.groupIndex + 1;
       addLog(`[${label || gIdx + '/' + totalGroupCount}] グループ (${group.pages}) 解析開始...`, 'log-info');
@@ -562,6 +598,7 @@ async function analyzeViaServer() {
                   addLog(`  [G${gIdx}] ${evt.name} 完了 (${evt.elapsed}秒)`, 'log-success');
                 } else if (evt.type === 'agent_error') {
                   addLog(`  [G${gIdx}] ${evt.name} エラー: ${evt.error}`, 'log-error');
+                  failureReasons[classifyErr(evt.error)]++;
                 }
               } catch {}
             }
@@ -572,6 +609,7 @@ async function analyzeViaServer() {
         return result;
       } catch (err) {
         addLog(`[G${gIdx}] 通信エラー: ${err.message}`, 'log-error');
+        failureReasons[classifyErr(err.message)]++;
         return null;
       }
     };
@@ -633,6 +671,13 @@ async function analyzeViaServer() {
 
     if (groupResults.length === 0) {
       addLog('全グループの解析に失敗しました', 'log-error');
+      const breakdown = Object.entries(failureReasons).filter(([_, v]) => v > 0).map(([k, v]) => `${k}:${v}`).join(' / ');
+      if (breakdown) addLog(`  原因内訳: ${breakdown}`, 'log-error');
+      if (failureReasons.format > 0) {
+        addLog('  → Opus4.7 フォーマット不一致が検出されました。/api/status?check=api でスモークテストを実行してください', 'log-error');
+      } else if (failureReasons.rate_limit > 0 || failureReasons.overloaded > 0) {
+        addLog('  → APIレート制限/過負荷が主因です。5〜10分待ってから再実行してください', 'log-error');
+      }
       return;
     }
 
