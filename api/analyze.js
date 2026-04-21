@@ -113,18 +113,29 @@ async function callClaude(apiKey, userContent, systemPrompt, opts = {}) {
     let errMsg = `API error (${resp.status})`;
     let isRateLimit = resp.status === 429;
     let isOverloaded = resp.status === 529;
+    let errType = null;
     try {
       const errData = await resp.json();
       if (errData.error) {
         errMsg = errData.error.message || errMsg;
-        if (errData.error.type === 'rate_limit_error') isRateLimit = true;
-        if (errData.error.type === 'overloaded_error') isOverloaded = true;
+        errType = errData.error.type;
+        if (errType === 'rate_limit_error') isRateLimit = true;
+        if (errType === 'overloaded_error') isOverloaded = true;
       }
     } catch {}
+    // Opus 4.7 の thinking/sampling パラメータ誤りは 400 で返る。明確な原因メッセージに変換。
+    if (resp.status === 400) {
+      if (/thinking\.type\.(enabled|adaptive)/i.test(errMsg) || /output_config\.effort/i.test(errMsg)) {
+        errMsg = `[Opus4.7 フォーマット不一致] ${errMsg} — thinking.type: 'adaptive' と output_config.effort を使用してください(budget_tokensは禁止)`;
+      } else if (/temperature|top_p|top_k/i.test(errMsg)) {
+        errMsg = `[Opus4.7 パラメータ禁止] ${errMsg} — Opus 4.7 では thinking 有効時に temperature/top_p/top_k を送れません`;
+      }
+    }
     const e = new Error(errMsg);
     e.isRateLimit = isRateLimit;
     e.isOverloaded = isOverloaded;
     e.status = resp.status;
+    e.apiErrorType = errType;
     throw e;
   }
 
