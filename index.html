@@ -884,7 +884,16 @@ async function analyzeViaBrowser() {
       body: JSON.stringify(body)
     });
     const data = await res.json();
-    if (data.error) throw new Error(data.error.message);
+    if (data.error) {
+      let msg = data.error.message || 'API error';
+      // Opus 4.7 の thinking/sampling 誤りを分かりやすいメッセージに変換
+      if (/thinking\.type\.(enabled|adaptive)|output_config\.effort/i.test(msg)) {
+        msg = `[Opus4.7 フォーマット不一致] ${msg} — thinking.type:'adaptive' と output_config.effort を使ってください`;
+      } else if (/temperature|top_p|top_k/i.test(msg) && body.thinking) {
+        msg = `[Opus4.7 パラメータ禁止] ${msg} — thinking有効時は temperature/top_p/top_k を送れません`;
+      }
+      throw new Error(msg);
+    }
     const textBlocks = (data.content || []).filter(c => c.type === 'text');
     if (!textBlocks.length) throw new Error('Empty response');
     return textBlocks.map(c => c.text).join('\n');

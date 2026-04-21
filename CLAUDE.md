@@ -7,6 +7,29 @@
 ## 言語
 - 日本語で対応する
 
+## ⚠️ Claude API 呼び出しの必須ルール（退行禁止）
+
+### Opus 4.7 使用時
+- **Extended Thinking は adaptive 形式のみ**: `thinking: { type: 'adaptive' }` + `output_config: { effort: 'high' }`
+- **旧形式 `{ type: 'enabled', budget_tokens: N }` は 400 エラーになる**（絶対に書き戻さないこと）
+- **`temperature` / `top_p` / `top_k` は thinking 有効時に送ると 400**（必ず thinking ブロックでは送らない）
+- 効率指定の値: `low | medium | high | xhigh | max`（コーディング/エージェント用途は `xhigh` 推奨、知的作業は最低 `high`）
+
+### モデル使い分け（現行構成）
+- `claude-haiku-4-5` → Agent 1-4 図面解析（最速・低コスト）
+- `claude-sonnet-4-6` → Agent 6 見積書整形（バランス）
+- `claude-opus-4-7` → Agent 5/7 数量積算・精度検証（`thinking: true`で深い推論）
+
+### 変更時の確認手順
+1. `api/analyze.js` と `index.html` の両方を同時に更新（片方だけ直すと片系が壊れる）
+2. デプロイ後 `GET /api/status?check=api` でスモークテスト実行
+3. 3 モデルとも `ok: true` を確認してから次へ進む
+4. サンプルPDFで Phase 1→2→3 を E2E テスト
+
+### 既知の落とし穴
+- Vercel Hobby の 60s タイムアウトでは 74グループの逐次処理が途中で切れる → **Pro 必須**（`maxDuration: 300`）
+- Phase 1 で個別グループが 4/4 エージェント全滅した場合、デフォルトでは silent に進むので、クライアント側で `errorCount >= 3` を検出してリトライする設計になっている
+
 ## トンマナ（営業資料・提案資料・デモ共通）
 BtoB業務改善の営業資料・デモ画面の共通トンマナ。参考: https://shoohey.github.io/case-study-payroll-demo/case-study-payroll.html
 
