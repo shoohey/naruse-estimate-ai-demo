@@ -910,38 +910,50 @@ async function analyzeViaBrowser() {
       messages
     };
     if (system) body.system = system;
-    // Opus 4.7 の Extended Thinking は adaptive 形式のみ。
-    // budget_tokens/temperature/top_p/top_k は 400 エラーになるので厳格分岐。
     if (opts.thinking) {
       body.thinking = { type: 'adaptive' };
-      body.output_config = { effort: 'high' };
+      body.output_config = { effort: opts.effort || 'high' };
     } else {
       body.temperature = opts.temperature ?? 0.2;
     }
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify(body)
-    });
-    const data = await res.json();
-    if (data.error) {
-      let msg = data.error.message || 'API error';
-      // Opus 4.7 の thinking/sampling 誤りを分かりやすいメッセージに変換
-      if (/thinking\.type\.(enabled|adaptive)|output_config\.effort/i.test(msg)) {
-        msg = `[Opus4.7 フォーマット不一致] ${msg} — thinking.type:'adaptive' と output_config.effort を使ってください`;
-      } else if (/temperature|top_p|top_k/i.test(msg) && body.thinking) {
-        msg = `[Opus4.7 パラメータ禁止] ${msg} — thinking有効時は temperature/top_p/top_k を送れません`;
+
+    const timeoutMs = opts.timeoutMs || 240000;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true'
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal
+      });
+      const data = await res.json();
+      if (data.error) {
+        let msg = data.error.message || 'API error';
+        if (/thinking\.type\.(enabled|adaptive)|output_config\.effort/i.test(msg)) {
+          msg = `[Opus4.7 フォーマット不一致] ${msg} — thinking.type:'adaptive' と output_config.effort を使ってください`;
+        } else if (/temperature|top_p|top_k/i.test(msg) && body.thinking) {
+          msg = `[Opus4.7 パラメータ禁止] ${msg} — thinking有効時は temperature/top_p/top_k を送れません`;
+        }
+        throw new Error(msg);
       }
-      throw new Error(msg);
+      const textBlocks = (data.content || []).filter(c => c.type === 'text');
+      if (!textBlocks.length) throw new Error('Empty response');
+      return textBlocks.map(c => c.text).join('\n');
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        throw new Error(`タイムアウト (${Math.round(timeoutMs/1000)}秒) — Claude APIが応答しません`);
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
     }
-    const textBlocks = (data.content || []).filter(c => c.type === 'text');
-    if (!textBlocks.length) throw new Error('Empty response');
-    return textBlocks.map(c => c.text).join('\n');
   };
 
   const parseJSON = (text) => {
@@ -1036,7 +1048,7 @@ async function analyzeViaBrowser() {
     const text5 = await callAPI([{
       role: 'user',
       content: [{ type: 'text', text: `以下の4つのAI解析結果を統合し、概算見積もりをJSON形式で作成してください。${mergeNote}\n\n建築: ${JSON.stringify(r1)}\n電気: ${JSON.stringify(r2)}\n機械: ${JSON.stringify(r3)}\n条件: ${JSON.stringify(r4)}` }]
-    }], null, { model: 'claude-opus-4-7', maxTokens: 24000, thinking: true });
+    }], null, { model: 'claude-opus-4-7', maxTokens: 24000, thinking: true, effort: 'high', timeoutMs: 240000 });
     handleSSE({ type: 'agent_complete', agent: 5, name: '数量積算AI', elapsed: ((Date.now()-start5)/1000).toFixed(1) });
     r5 = parseJSON(text5);
   } catch (err) {
@@ -1052,7 +1064,7 @@ async function analyzeViaBrowser() {
     const text6 = await callAPI([{
       role: 'user',
       content: [{ type: 'text', text: `以下の数量積算結果から、プロフェッショナルな御見積書をJSON形式で完成させてください。\n\n積算データ: ${JSON.stringify(r5)}\n条件: ${JSON.stringify(r4)}` }]
-    }], null, { model: 'claude-sonnet-4-6', maxTokens: 24000, temperature: 0.1 });
+    }], null, { model: 'claude-sonnet-4-6', maxTokens: 24000, temperature: 0.1, timeoutMs: 240000 });
     handleSSE({ type: 'agent_complete', agent: 6, name: '見積書生成AI', elapsed: ((Date.now()-start6)/1000).toFixed(1) });
     r6 = parseJSON(text6);
   } catch (err) {
@@ -1064,18 +1076,39 @@ async function analyzeViaBrowser() {
   handleSSE({ type: 'phase', phase: 4, message: 'Phase 4: 精度検証AIが整合性をチェック中...' });
   handleSSE({ type: 'agent_start', agent: 7, name: '精度検証AI' });
   let r7, start7 = Date.now();
+
+  // Agent 7 入力の軽量化: 全JSONを渡すと処理が止まるため、検証に必要な要素のみ抽出
+  const estForCheck = r6?.estimate || r6 || {};
+  const summary = estForCheck.summary || {};
+  const categories = (estForCheck.categories || []).map(c => ({
+    id: c.id, name: c.name, amount: c.amount,
+    items: (c.items || []).slice(0, 30).map(i => ({
+      name: i.name, quantity: i.quantity, unit: i.unit, unitPrice: i.unitPrice, amount: i.amount
+    }))
+  }));
+  const m2 = r5?.m2CostPerArea || r5?.summary?.costPerM2 || null;
+  const compactInput = { summary, categories, m2CostPerArea: m2 };
+
   try {
     const text7 = await callAPI([{
       role: 'user',
-      content: [{ type: 'text', text: `以下の御見積書を検証し、計算整合性・m2単価妥当性・工種比率を厳密にチェック。問題があれば自動修正した確定版estimateをJSONで返してください。\n\n見積書: ${JSON.stringify(r6)}\n積算根拠: ${JSON.stringify(r5)}\n\n出力スキーマ: {"agent":"精度検証AI","validationReport":{"overallStatus":"passed|warnings|errors_fixed","calculationCheck":{"passed":true,"issues":[]},"validityCheck":{"m2CostJudgement":"in_range","categoryRatioJudgement":"normal","outlierItems":[]},"completenessCheck":{"missingFields":[],"addedFields":[]}},"estimate":{...修正済み見積書全体...}}` }]
-    }], null, { model: 'claude-opus-4-7', maxTokens: 24000, thinking: true });
+      content: [{ type: 'text', text: `以下の見積書サマリと明細(抜粋)を検証してください。計算整合性(数量×単価=金額、項目合計=カテゴリ金額、直接工事費+諸経費+法定福利費=税抜合計、税抜×0.1=税、税込=税抜+税)、m2単価妥当性、工種比率をチェック。問題があれば自動修正してJSONで返す。\n\n${JSON.stringify(compactInput)}\n\n出力スキーマ: {"agent":"精度検証AI","validationReport":{"overallStatus":"passed|warnings|errors_fixed","calculationCheck":{"passed":true,"issues":[]},"validityCheck":{"m2CostJudgement":"in_range|above_range|below_range","categoryRatioJudgement":"normal|outlier","outlierItems":[]},"completenessCheck":{"missingFields":[],"addedFields":[]}}}\n\n注: estimateフィールドは返さなくてよい。検証レポートのみでOK。` }]
+    }], null, {
+      model: 'claude-opus-4-7',
+      maxTokens: 8000,
+      thinking: true,
+      effort: 'medium',
+      timeoutMs: 180000
+    });
     handleSSE({ type: 'agent_complete', agent: 7, name: '精度検証AI', elapsed: ((Date.now()-start7)/1000).toFixed(1) });
     r7 = parseJSON(text7);
   } catch (err) {
     handleSSE({ type: 'agent_error', agent: 7, name: '精度検証AI', error: err.message, elapsed: ((Date.now()-start7)/1000).toFixed(1) });
-    r7 = { error: err.message };
+    addLog(`Agent 7 スキップ(${err.message}) — Agent 6 の見積書を最終版として使用`, 'log-warn');
+    r7 = { error: err.message, skipped: true };
   }
 
+  // Agent 7 に修正済み estimate があればそれを、なければ r6 を最終版とする
   const finalEstimate = (r7 && r7.estimate) ? { agent: '見積書生成AI(検証済み)', estimate: r7.estimate } : r6;
 
   handleSSE({ type: 'complete', phases: {

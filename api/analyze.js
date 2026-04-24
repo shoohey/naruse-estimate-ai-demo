@@ -80,6 +80,8 @@ async function callClaude(apiKey, userContent, systemPrompt, opts = {}) {
     maxTokens = MAX_TOKENS_DEFAULT,
     thinking = false,
     temperature = 0.2,
+    effort = THINKING_EFFORT,
+    timeoutMs = 180000,
   } = opts;
 
   const body = {
@@ -88,26 +90,37 @@ async function callClaude(apiKey, userContent, systemPrompt, opts = {}) {
     messages: [{ role: 'user', content: userContent }],
   };
   if (systemPrompt) body.system = systemPrompt;
-  // Opus 4.7 の Extended Thinking は adaptive 形式のみ。
-  // budget_tokens/temperature/top_p/top_k を送ると 400 になるので厳格に分岐。
   if (thinking) {
     body.thinking = { type: 'adaptive' };
-    body.output_config = { effort: THINKING_EFFORT };
-    // ↑ 旧形式 { type: 'enabled', budget_tokens: N } は Opus 4.7 では禁止
+    body.output_config = { effort };
   } else {
-    // thinking 無効時のみ temperature を送る(Opus 4.7 で thinking:false にはしない運用)
     body.temperature = temperature;
   }
 
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify(body),
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let resp;
+  try {
+    resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      const e = new Error(`タイムアウト (${Math.round(timeoutMs/1000)}秒) — Claude API応答なし`);
+      e.isTimeout = true;
+      throw e;
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (!resp.ok) {
     let errMsg = `API error (${resp.status})`;
@@ -609,6 +622,11 @@ async function handleGroupMode(req, res, apiKey, pdfs, projectName, clientName, 
 // ============================
 async function handleFinalMode(req, res, apiKey, mergedResults, projectName, clientName) {
   const send = setupSSE(res);
+  const T0 = Date.now();
+  // Vercel maxDuration 300秒に対して、安全マージン 30秒を残して他工程を終える
+  const TIME_BUDGET_MS = 270000;
+  const elapsed = () => Date.now() - T0;
+  const remainingMs = () => TIME_BUDGET_MS - elapsed();
 
   try {
     const mergeGroupResults = (results) => {
@@ -643,15 +661,35 @@ async function handleFinalMode(req, res, apiKey, mergedResults, projectName, cli
       { model: MODEL_PRIMARY, maxTokens: MAX_TOKENS_REASONING, temperature: 0.1 },
       send);
 
-    // Phase 4: 精度検証 (Opus + Extended Thinking)
-    send('phase', { phase: 4, message: 'Phase 4: 精度検証AIが計算整合性を厳密チェック中...' });
-    const r7 = await runAgentFn(apiKey, 7, '精度検証AI',
-      getAgent7Prompt(r6, r5),
-      [{ type: 'text', text: '上記の指示に従い、見積書を厳密に検証し確定版を出力してください。' }],
-      { model: MODEL_REASONING, maxTokens: MAX_TOKENS_REASONING, thinking: true },
-      send);
+    // Phase 4: 精度検証 (Opus + Extended Thinking) - 時間予算が足りないならスキップ
+    let r7 = null;
+    const AGENT7_MIN_BUDGET_MS = 70000; // Opus4.7+thinking に最低70秒は必要
+    if (remainingMs() < AGENT7_MIN_BUDGET_MS) {
+      send('phase', { phase: 4, message: `Phase 4: 時間予算不足(残${Math.round(remainingMs()/1000)}秒) — 精度検証AIをスキップ` });
+      send('agent_error', { agent: 7, name: '精度検証AI', error: `時間予算不足でスキップ(Phase 2+3で${Math.round(elapsed()/1000)}秒消費)`, elapsed: '0.0' });
+      r7 = { skipped: true, reason: 'time_budget_exhausted', elapsedBeforeAgent7Sec: Math.round(elapsed()/1000) };
+    } else {
+      send('phase', { phase: 4, message: 'Phase 4: 精度検証AIが計算整合性を厳密チェック中...' });
+      // r6 は JSON が巨大なので、検証に必要な最小限の構造だけ抽出して渡す
+      const estForCheck = r6?.estimate || r6 || {};
+      const compactForCheck = {
+        summary: estForCheck.summary || {},
+        categories: (estForCheck.categories || []).map(c => ({
+          id: c.id, name: c.name, amount: c.amount,
+          items: (c.items || []).slice(0, 30).map(i => ({
+            name: i.name, quantity: i.quantity, unit: i.unit, unitPrice: i.unitPrice, amount: i.amount
+          }))
+        })),
+        m2CostPerArea: r5?.m2CostPerArea || r5?.summary?.costPerM2 || null
+      };
+      r7 = await runAgentFn(apiKey, 7, '精度検証AI',
+        `あなたは建設見積書の精度検証AIです。以下の見積書サマリ(抜粋)を検証してください。計算整合性(数量×単価=金額、項目合計=カテゴリ金額、直接工事費+諸経費+法定福利費=税抜合計、税抜×0.1=税)、m2単価妥当性、工種比率をチェック。\n\n${COMMON_RULES}\n\n出力JSONスキーマ: {"agent":"精度検証AI","validationReport":{"overallStatus":"passed|warnings|errors_fixed","calculationCheck":{"passed":true,"issues":[]},"validityCheck":{"m2CostJudgement":"in_range|above_range|below_range","categoryRatioJudgement":"normal|outlier","outlierItems":[]},"completenessCheck":{"missingFields":[],"addedFields":[]}}}\n\n注: estimate は返さなくてよい。検証レポートのみで可。`,
+        [{ type: 'text', text: `以下のデータを検証してください:\n${JSON.stringify(compactForCheck)}` }],
+        { model: MODEL_REASONING, maxTokens: 8000, thinking: true, effort: 'medium', maxRetries: 1 },
+        send);
+    }
 
-    // r7に修正済みestimateがあればそれを最終版とする
+    // r7 に修正済み estimate があればそれを最終版、なければ r6 を使う
     const finalEstimate = (r7 && r7.estimate) ? { agent: '見積書生成AI(検証済み)', estimate: r7.estimate } : r6;
 
     send('complete', {
