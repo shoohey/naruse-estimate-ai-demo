@@ -196,25 +196,40 @@ async function callClaudeWithRetry(apiKey, userContent, systemPrompt, opts, send
 // ============================
 function buildRef(domain) {
   const r = REFERENCE_DATA;
+  const ni = r.PROJECTS && r.PROJECTS.nishiIchinoe; // v2: 西一之江を補助参照として併用
+
   const base = `
-【参照プロジェクト: ${r.project.name}】
+【参照プロジェクト1: ${r.project.name}】(プライマリ・新店S造2階建)
 用途: ${r.project.type} / 構造: ${r.project.structure} ${r.project.floors}階 / 延床: ${r.project.totalFloorArea}m2
 総額(税抜): ${(r.project.totalCostExclTax/10000).toLocaleString()}万円 / m2単価: ${r.project.costPerM2.toLocaleString()}円
-【工事比率】${Object.entries(r.categories).map(([k,v])=>`${k}: ${(v.ratio*100).toFixed(1)}%`).join(' / ')}`;
+【工事比率(座間)】${Object.entries(r.categories).map(([k,v])=>`${k}: ${(v.ratio*100).toFixed(1)}%`).join(' / ')}` + (ni ? `
+
+【参照プロジェクト2: ${ni.project.name}】(セカンダリ・既存建屋改修)
+用途: ${ni.project.type}
+総額(税抜): ${(ni.project.totalCostExclTax/10000).toLocaleString()}万円 (本工事のみ。追加工事を含めると ${((ni.grandTotalExclTax||ni.project.totalCostExclTax)/10000).toLocaleString()}万円)
+【工事比率(西一之江)】${Object.entries(ni.categories).map(([k,v])=>`${k}: ${(v.ratio*100).toFixed(1)}%`).join(' / ')}
+※西一之江は防災設備工事を電気側に独立計上（座間と異なる）。鉄筋・石・タイル工事は0計上（既存建屋活用）。` : '');
+
+  // 単価DBは2プロジェクト分を併記してエージェントに比較判断を委ねる
+  const merge = (k) => {
+    const z = r[k] || {};
+    const n = (ni && ni[k]) || {};
+    return JSON.stringify({ 座間林間: z, 西一之江: n }, null, 1);
+  };
 
   const db = {
-    architecture: JSON.stringify(r.unitPrices, null, 1),
-    electrical: JSON.stringify(r.electricalPrices, null, 1),
-    mechanical: JSON.stringify(r.mechanicalPrices, null, 1),
+    architecture: merge('unitPrices'),
+    electrical: merge('electricalPrices'),
+    mechanical: merge('mechanicalPrices'),
     conditions: JSON.stringify(r.feeRatios, null, 1) + '\n' + JSON.stringify(r.benchmarkCostPerM2, null, 1),
   };
   if (domain === 'full') {
-    return base + '\n【建築単価】' + db.architecture + '\n【電気単価】' + db.electrical + '\n【機械単価】' + db.mechanical + '\n【費率】' + db.conditions;
+    return base + '\n【建築単価DB(2件)】' + db.architecture + '\n【電気単価DB(2件)】' + db.electrical + '\n【機械単価DB(2件)】' + db.mechanical + '\n【費率】' + db.conditions;
   }
   if (domain === 'summary') {
     return base + '\n【費率・ベンチマーク】' + db.conditions;
   }
-  return base + '\n【参照単価DB】' + (db[domain] || '');
+  return base + '\n【参照単価DB(2プロジェクト併記)】' + (db[domain] || '');
 }
 
 // ============================
@@ -434,7 +449,7 @@ ${COMMON_RULES}
   "agent": "見積書生成AI",
   "estimate": {
     "title": "概算御見積書",
-    "subtitle": "AI自動生成(参照: 西友座間林間店 新店工事)",
+    "subtitle": "AI自動生成(参照: 西友座間林間店 新店工事 + 西友西一之江店 新店工事)",
     "date": "${new Date().toLocaleDateString('ja-JP')}",
     "projectName": "",
     "clientName": "",
@@ -472,13 +487,18 @@ ${JSON.stringify(r6)}
 【Agent5: 積算根拠】
 ${JSON.stringify(r5)}
 
-【参照プロジェクト】
-- 名称: ${REFERENCE_DATA.project.name}
+【参照プロジェクト1: ${REFERENCE_DATA.project.name}】(プライマリ・新店S造)
 - 用途: ${REFERENCE_DATA.project.type}
 - 構造: ${REFERENCE_DATA.project.structure} ${REFERENCE_DATA.project.floors}階
 - 延床: ${REFERENCE_DATA.project.totalFloorArea}m2
 - 税抜総額: ${REFERENCE_DATA.project.totalCostExclTax.toLocaleString()}円
 - m2単価: ${REFERENCE_DATA.project.costPerM2.toLocaleString()}円/m2
+
+【参照プロジェクト2: ${REFERENCE_DATA.PROJECTS.nishiIchinoe.project.name}】(セカンダリ・既存建屋改修)
+- 用途: ${REFERENCE_DATA.PROJECTS.nishiIchinoe.project.type}
+- 税抜総額(本工事): ${REFERENCE_DATA.PROJECTS.nishiIchinoe.project.totalCostExclTax.toLocaleString()}円
+- 工期: ${REFERENCE_DATA.PROJECTS.nishiIchinoe.project.constructionPeriod}
+- 特記: 防災設備工事は電気側に計上、鉄筋・石・タイル工事は0計上
 
 【建物用途別 m2単価ベンチマーク】
 ${JSON.stringify(REFERENCE_DATA.benchmarkCostPerM2, null, 1)}

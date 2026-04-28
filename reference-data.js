@@ -1,8 +1,14 @@
 /**
- * 参照データベース — 座間林間プロジェクト（西友座間林間店 新店工事）
+ * 参照データベース — 西友スーパーマーケット工事 RAG用ナレッジ
  *
- * このデータは実際の見積書（全85ページ）と設計図面（建築34枚・電気34枚・機械21枚）から
- * AI 6体が並列で抽出・構造化した学習データです。
+ * v2: 複数プロジェクト対応（座間林間 + 西一之江）
+ *  - PROJECTS.zamaRinkan: 西友座間林間店 新店工事（S造2階建・延床2,602.8m2・税抜2.54億円）
+ *  - PROJECTS.nishiIchinoe: 西友西一之江店 新店工事（既存建屋改修ベースの内装・設備工事・税抜0.95億円）
+ *
+ * 後方互換: REFERENCE_DATA トップレベルは引き続き座間林間（プライマリ参照）。
+ * 新コードは REFERENCE_DATA.PROJECTS から両プロジェクトのデータにアクセスできる。
+ *
+ * このデータは実際の見積書と設計図面・竣工資料から AI エージェント並列抽出で構造化した学習データ。
  * 新しい建設図面が入力された際、このデータを参照して概算見積もりの精度を飛躍的に高めます。
  */
 
@@ -467,6 +473,474 @@ const REFERENCE_DATA = {
     '産業廃棄物: 適正処理費用を計上',
     '支払条件: 規定通り'
   ]
+};
+
+// ============================
+// 西一之江プロジェクト（v2 追加 — 既存建屋改修ベース）
+// ============================
+const NISHI_ICHINOE = {
+  project: {
+    name: '西友西一之江店 新店工事',
+    type: 'スーパーマーケット新店工事（既存建屋改修ベースの内装・設備工事）',
+    client: '株式会社 西友',
+    contractor: 'セック株式会社',
+    location: '東京都江戸川区西一之江1丁目1291-1',
+    structure: null, // 既存建屋改修のため見積書に明示なし
+    floors: null,
+    buildingHeight: null,
+    siteArea: null,
+    buildingArea: null,
+    totalFloorArea: null,
+    constructionPeriod: '2025年8月上旬〜11月上旬予定（約90日）',
+    designDate: null,
+    estimateDate: '2025-07-17',
+    totalCostExclTax: 95000000,
+    taxRate: 0.10,
+    totalCostInclTax: 104500000,
+    costPerM2: null, // 延床不明のため算出不能
+    sourcePDFs: [
+      '㈰_セック_西友西一之江店_新店工事_御見積書_20250724.pdf'
+    ]
+  },
+
+  categories: {
+    '共通仮設工事':   { amount:  4597210, ratio: 0.0484 },
+    '建築工事':       { amount: 37805610, ratio: 0.3980 },
+    '電気設備工事':   { amount: 15762660, ratio: 0.1659 },
+    '機械設備工事':   { amount: 29343010, ratio: 0.3089 },
+    '現場管理費':     { amount:  2250000, ratio: 0.0237 },
+    '諸経費':         { amount:  8381575, ratio: 0.0882 },
+    '調整値引き':     { amount: -3140065, ratio: -0.0331 }
+  },
+
+  costStructure: {
+    directConstruction: 87508490, // 共通仮設+建築+電気+機械
+    managementFee: { amount: 2250000, rateOfDirect: 0.0257 },
+    designFee: 500000,
+    overhead: { amount: 4058268, rateOfDirect: 0.0464 },
+    legalWelfare: { amount: 3823307, rateOfDirect: 0.0437 },
+    discount: { amount: -3140065, rateOfTotal: -0.0331 }
+  },
+
+  // 追加・変更見積（本工事後の差分）
+  additionalWorks: [
+    { title: '多目的トイレ工事',         amountExclTax: 1340000, date: '2025-09-20' },
+    { title: '排水管内カメラ調査',       amountExclTax:  153000, date: '2025-09-29' },
+    { title: '不陸調整工事',             amountExclTax: 2000000, date: '2025-09-22' },
+    { title: '追加工事(5-1)',            amountExclTax: 4400000, date: '2025-11-05' },
+    { title: '増減 修正2(5-2)',          amountExclTax: 2150000, date: '2025-11-19' },
+    { title: '追加工事(9)',              amountExclTax: 1480000, date: '2025-11-05' },
+    { title: '追加工事2(10)',            amountExclTax:  220000, date: '2025-12-02' },
+    { title: '内装設備工事 最終差額(11)', amountExclTax: 2270000, date: '2026-01-20' }
+  ],
+  additionalWorksTotalExclTax: 13813000,
+  grandTotalExclTax: 108813000,
+
+  architectureBreakdown: {
+    '直接仮設工事':      1871000,
+    '解体工事':          2186150,
+    'コンクリート工事':  3031100,
+    '組積工事':           202800,
+    '防水工事':           378000,
+    '金属工事・鉄骨工事': 7092250,
+    '左官工事':           446500,
+    '塗装工事':           912810,
+    '建具工事':          6593500,
+    'ガラス工事':         530500,
+    '内装工事':         11476920,
+    'その他工事':        3084080
+    // 鉄筋・石・タイル工事は本案件では0計上（既存建屋活用のため）
+  },
+
+  electricalBreakdown: {
+    '幹線・動力設備工事':       5798100,
+    '電灯設備工事':             3651730,
+    '電話配管・テレビ共聴設備':  835900,
+    '放送設備工事':              498380,
+    '空調換気設備工事':          724300,
+    'EMS導入工事':               984700,
+    '防災設備工事':             3269550 // 西一之江では電気側に独立計上（座間と異なる）
+  },
+
+  mechanicalBreakdown: {
+    '施設内給水設備工事':  1105900,
+    '施設内排水設備工事':  1065400,
+    '衛生器具設備工事':    1298900,
+    '空調機器設備工事':   12344510,
+    '換気設備工事':       13528300
+    // 防災設備工事は本案件では電気側に計上のため機械側は無し
+  },
+
+  unitPrices: {
+    temporary: {
+      '現場養生費': { unit: '日', price: 3300, note: '90日' },
+      '集塵機': { unit: '台', price: 88000, note: '30日×2台' },
+      '集塵機運搬費': { unit: '回', price: 25000 },
+      'ゴミ搬出費': { unit: '人工', price: 28000 },
+      '搬入費': { unit: '人工', price: 28000 },
+      '仮設トイレ（水洗）': { unit: '台', price: 55000 },
+      '仮設4坪ハウス（AC付）': { unit: '台', price: 300000 },
+      '片付け清掃費': { unit: '日', price: 5500 },
+      '発生材処分運搬費（4tコンテナ）': { unit: '台', price: 150000 },
+      '立馬（駱駝15号）': { unit: '台', price: 18900 },
+      '天台（コンステージMKT-1750）': { unit: '台', price: 34650 },
+      '仮設照明（パノラマスタンドLED）': { unit: '台', price: 59400 },
+      '漏電遮断機付きコードリール': { unit: '台', price: 25200 },
+      '引渡し清掃（ガラス・サッシ）': { unit: '式', price: 120000 },
+      '引渡し清掃（床ワックス含む）': { unit: 'm2', price: 400 },
+      '諸官庁検査立会費': { unit: '式', price: 90000 },
+      '関係省庁申請手続き費': { unit: '式', price: 85000 }
+    },
+    demolition: {
+      '東面開口解体（建具用）': { unit: 'ヶ所', price: 55000 },
+      '南面開口解体（建具用）': { unit: 'ヶ所', price: 110000 },
+      '西面開口解体（建具用）': { unit: 'ヶ所', price: 70000 },
+      '西面開口部基礎斫り工事': { unit: 'ヶ所', price: 70000 },
+      'カッター入れ': { unit: 'm', price: 550 },
+      '売場道路カッター入れ（W200×h250×3回入れ）': { unit: 'm', price: 4200 },
+      'バックヤードカッター入れ（3回入れ）': { unit: 'm', price: 4000 },
+      '溝斫り（W200×h250）': { unit: 'm', price: 7000 },
+      'バックヤード斫り工事': { unit: 'm2', price: 16500 },
+      '斫り用コンプレッサー': { unit: '日', price: 50000 }
+    },
+    concrete: {
+      '店内床生コン打設（厚100、スタイロ＋WM込）': { unit: 'm2', price: 11500 },
+      '店内床生コン打設（厚80）': { unit: 'm2', price: 9200 },
+      '店内床生コン打設（厚60）': { unit: 'm2', price: 7000 },
+      '埋戻し工事（W200×H150）': { unit: 'm', price: 4500 },
+      '埋戻し工事（W250×H250）': { unit: 'm', price: 11000 },
+      'ポンプ車損料': { unit: '台', price: 88000 }
+    },
+    masonry: {
+      '70ブロック2段積': { unit: 'm', price: 6200 },
+      '70ブロック150積': { unit: 'm', price: 4200 }
+    },
+    waterproofing: {
+      'ゴミ置き場防水工事': { unit: 'm2', price: 10800 },
+      '冷蔵庫・冷凍庫防水工事': { unit: 'm2', price: 10800 }
+    },
+    metal: {
+      '新規天井LGS（吊りボルト1500-1900）': { unit: 'm2', price: 3200 },
+      'X,Yチャンネル水平補強': { unit: 'm2', price: 1450 },
+      'X,Yチャンネル斜めブレス': { unit: 'ヶ所', price: 21000 },
+      '間仕切り・フカシ壁（ST4565）': { unit: 'm2', price: 3200 },
+      '間仕切りドア開口補強': { unit: 'ヶ所', price: 12100 },
+      'スライドドア開口補強': { unit: 'ヶ所', price: 26500 },
+      'ゴミ庫間仕切壁（ST100）': { unit: 'm2', price: 3850 },
+      '柱型LGS': { unit: 'm2', price: 3850 },
+      '埋込消火器間仕切壁': { unit: 'ヶ所', price: 42000 },
+      '天井点検口設置': { unit: 'ヶ所', price: 14500 },
+      '壁点検口設置（目地タイプ）': { unit: 'ヶ所', price: 19800 },
+      '鍵付き点検口設置': { unit: 'ヶ所', price: 25000 },
+      '外壁開口補強（アルミ6連排煙窓）': { unit: 'ヶ所', price: 275000 },
+      '外壁開口補強（アルミ3連排煙窓）': { unit: 'ヶ所', price: 145000 },
+      'ゴミ置き場SUS貼り': { unit: 'm2', price: 20000 },
+      '亜鉛鉄板下地': { unit: 'm2', price: 14500 }
+    },
+    plastering: {
+      '際防水下地': { unit: 'm2', price: 2600 },
+      'グレーチング内側補修': { unit: 'ヶ所', price: 32000 },
+      '新規扉部スロープ新設': { unit: 'ヶ所', price: 95000 },
+      '後方通路スロープ新設': { unit: 'm2', price: 15500 },
+      '薄塗モルタル3mm': { unit: 'm2', price: 2500 },
+      '雑左官': { unit: '人工', price: 28000 }
+    },
+    painting: {
+      '売場壁塗装': { unit: 'm2', price: 3200 },
+      '売場柱塗装': { unit: 'm2', price: 3200 },
+      '各所コーナー塗装': { unit: 'm', price: 770 },
+      'ゴミ置き場壁塗装': { unit: 'm2', price: 3200 },
+      'ゴミ置き場天井塗装': { unit: 'm2', price: 2800 },
+      '風除室壁塗装': { unit: 'm2', price: 3200 },
+      '従業員トイレ壁塗装': { unit: 'm2', price: 3200 }
+    },
+    fixtures: {
+      '両開きスイングドア（SWD-1, ユニフロー W1600×H2005）': { unit: 'セット', price: 288000 },
+      'SUS304HL三方枠': { unit: '本', price: 92000 },
+      '片開きハンガードア半自動（LSD-1）': { unit: 'セット', price: 490000 },
+      '両開き親子ドア（LSD-2, W1200×H2100）': { unit: 'セット', price: 380000 },
+      '片開きドア（LSD-3, W600×H2000）': { unit: 'セット', price: 290000 },
+      '片開きドア（LSD-4, W700×H2000）': { unit: 'セット', price: 300000 },
+      '片開きドア（LSD-5, W800×H2000）': { unit: 'セット', price: 230000 },
+      '片開きドア レバーハンドル電気錠（LSD-6）': { unit: 'セット', price: 380000 },
+      '両開き親子ドア（SD-1, W1500×H2100）': { unit: 'セット', price: 550000 },
+      '自動ドア 引き分け＋FIX窓（AAD-1, W5145×H2800）': { unit: 'セット', price: 1080000 },
+      '排煙窓3連窓（AW-7, W3158×H761）': { unit: 'セット', price: 700000 },
+      '排煙窓5連窓（AW-8, W6731×H761）': { unit: 'セット', price: 1400000 },
+      '建具施工費': { unit: '人工', price: 28000 }
+    },
+    glass: {
+      'FL6透明＋飛散防止フィルム（W1035×H2075）': { unit: 'セット', price: 40000 },
+      'TP8透明強化（W800×H2080）': { unit: 'セット', price: 50000 },
+      'コーキング費': { unit: 'm', price: 500 },
+      'コーキング費（防火）': { unit: 'm', price: 1350 },
+      'ガラス施工費': { unit: '人工', price: 28000 }
+    },
+    interior: {
+      '天井不燃ジプトーン3x3': { unit: 'm2', price: 2400 },
+      '天井不燃ジプトーン1.5x3': { unit: 'm2', price: 2600 },
+      '壁強化PB（Z12.5）': { unit: 'm2', price: 2750 },
+      '柱型強化PB（Z12.5）': { unit: 'm2', price: 3500 },
+      '壁PBt12.5': { unit: 'm2', price: 2200 },
+      '壁PBt12.5素地張り': { unit: 'm2', price: 2400 },
+      '壁耐水PBt12.5': { unit: 'm2', price: 2750 },
+      '壁ケイカルt8': { unit: 'm2', price: 3800 },
+      '壁GW充填（t50×24kg）': { unit: 'm2', price: 1800 },
+      'クロス施工費': { unit: 'm2', price: 1450 },
+      'メラミン化粧板施工費': { unit: 'm', price: 4800 },
+      '床Pタイル施工費': { unit: 'm2', price: 1980 },
+      '巾木施工費（副資材含む）': { unit: 'm', price: 990 },
+      '冷凍冷蔵庫塗床（タフクリートSY-SD工法）': { unit: 'm2', price: 16500 },
+      '青果冷蔵庫塗床（ケミクリートE）': { unit: 'm2', price: 11000 },
+      '生ゴミ処理室塗床': { unit: '式', price: 120000 },
+      '倉庫・後方通路塗床（セラミキュア）': { unit: 'm2', price: 1550 }
+    },
+    otherArch: {
+      '壁掛けテレビ金具設置': { unit: '箇所', price: 11000 },
+      '姿見鏡（松竹工業 M5×600×1800）': { unit: '枚', price: 13500 },
+      'カーテン（サンゲツ AC2416, W2000×H2200）': { unit: 'セット', price: 50000 },
+      '荷捌口コーナーガード': { unit: '箇所', price: 15000 },
+      'オーニング本体（BXテンパル W9000）': { unit: '台', price: 495000 },
+      'オーニング キャンバス（防炎）': { unit: '枚', price: 293150 },
+      'バリカー設置（FPA-17CB12）': { unit: '本', price: 80000 },
+      'バリカー設置（FPA-12CB12）': { unit: '本', price: 55000 },
+      '外構 舗装版破砕工': { unit: 'm2', price: 3850 },
+      '外構 既存フェンス撤去（基礎残置）': { unit: 'm', price: 2750 },
+      '外構 キュービクル基礎': { unit: '式', price: 650000 },
+      '外構 舗装復旧工（路盤共）': { unit: 'm2', price: 35500 },
+      '外構 メッシュフェンス設置（セキスイG10 H1800）': { unit: 'm', price: 12500 },
+      '外構 区画線改修（既存消去含む）': { unit: '式', price: 280000 }
+    }
+  },
+
+  electricalPrices: {
+    cables: {
+      'CVT100sq': { unit: 'm', price: 7000 },
+      'CVT60sq':  { unit: 'm', price: 4500 },
+      'CVT38sq':  { unit: 'm', price: 2950 },
+      'CVT14sq':  { unit: 'm', price: 1200 },
+      'CV5.5-4C': { unit: 'm', price: 610 },
+      'CV3.5-4C': { unit: 'm', price: 460 },
+      'IV14sq(G)': { unit: 'm', price: 400 },
+      'IV5.5sq(G)': { unit: 'm', price: 280 },
+      'IV1.6(G)': { unit: 'm', price: 55 },
+      'VVF2.0-3C': { unit: 'm', price: 310 },
+      'VVF2.0-2C': { unit: 'm', price: 200 },
+      'VVF1.6-3C': { unit: 'm', price: 200 },
+      'VVF1.6-2C': { unit: 'm', price: 105 },
+      'PF22(保護用)': { unit: 'm', price: 105 },
+      'PF28': { unit: 'm', price: 180 }
+    },
+    panels: {
+      'L-T1-1 屋内自立(河村電器)': { unit: '式', price: 950000 },
+      'L-T1-2 屋内壁掛(河村電器)': { unit: '式', price: 130000 },
+      'L-T1-3 屋内壁掛(河村電器)': { unit: '式', price: 210000 },
+      'P-T1-1 屋内壁掛(河村電器)': { unit: '式', price: 210000 },
+      'P-T1-2 屋内壁掛(河村電器)': { unit: '式', price: 250000 },
+      'ELV制御盤 屋内壁掛(河村電器)': { unit: '式', price: 99000 },
+      '分電盤搬入作業': { unit: '式', price: 132000 },
+      '分電盤設置工事': { unit: '面', price: 44000 }
+    },
+    cableRack: {
+      'SD-QR40': { unit: '本', price: 20000 },
+      'SD-QRLA40 L型ラック': { unit: '本', price: 15500 },
+      'SD-CV40Y 直線屋根型カバー': { unit: '本', price: 14500 },
+      '新設ラック加工施工工事': { unit: '式', price: 245000 },
+      '新設ラックカバー施工工事': { unit: '式', price: 55000 },
+      '幹線配線工事': { unit: '式', price: 265000 }
+    },
+    lighting: {
+      '投光器(NNY24987同等品)': { unit: '台', price: 113300, note: '駐輪場照明' },
+      'ライティングレール': { unit: 'm', price: 2740 },
+      'ライティングレールジョイナー': { unit: '個', price: 4585 },
+      '人感センサー親器': { unit: '台', price: 12000 },
+      '人感センサー子器': { unit: '台', price: 9500 },
+      '店内基本照明配線取付作業': { unit: '個', price: 4500 },
+      'ダウンライト墨出し配線取付工事': { unit: '個', price: 4500 },
+      '店内墨出し下地材仕込み取付作業': { unit: '式', price: 200000 },
+      'エアコン・ロスナイ電源工事': { unit: '式', price: 70000 },
+      '店内照明墨出し配線工事': { unit: '式', price: 420000 },
+      'バックヤード等配線工事': { unit: '式', price: 165000 },
+      'スポットライト取付工事': { unit: '式', price: 99000 }
+    },
+    wiring: {
+      '幹線配線工事': { unit: '式', price: 265000 },
+      'コンセント配線取付工事': { unit: '式', price: 230000 },
+      '店内コンセント墨出しボックス取付': { unit: '式', price: 135000 },
+      'BY作業場事務所コンセント墨出し工事': { unit: '式', price: 230000 },
+      'レジコンセント工事': { unit: '式', price: 175000 },
+      '床コンセントボックス配管工事': { unit: '式', price: 130000 },
+      'Wコンセント(WN1302010)': { unit: 'セット', price: 560 },
+      'E付Wコンセント(WN1512K)': { unit: 'セット', price: 680 },
+      '抜け止めWコンセントE付(WN1162)': { unit: 'セット', price: 880 },
+      'アップコンセント(DU5146PV)': { unit: 'セット', price: 5900 },
+      '防水コンセント(WK4106)': { unit: '個', price: 1320 }
+    },
+    broadcast: {
+      '埋込スピーカー(CM-2330A)': { unit: '個', price: 4600 },
+      '埋込スピーカー アッテネーター付き(CM-2330AT)': { unit: '個', price: 6800 },
+      'アッテネーター(AT-065A)': { unit: '個', price: 3400 },
+      '配線工事費': { unit: '式', price: 330000 },
+      '機器取付工事費': { unit: '式', price: 77000 },
+      '調整試験費': { unit: '式', price: 16500 }
+    },
+    fireAlarm: {
+      'P型1級複合盤受信機(HAV-AAW20 ホーチキ)': { unit: '台', price: 650000 },
+      '光電式スポット感知器(SLV-2RL ホーチキ)': { unit: '個', price: 15800 },
+      '定温式スポット感知器(DFG1W70L ホーチキ)': { unit: '個', price: 2300 },
+      'フラット型小型機器収容箱(KSU-10HSKY ホーチキ)': { unit: '台', price: 26500 },
+      '配線工事費(自火報)': { unit: '式', price: 380000 },
+      '機器取付工事(自火報)': { unit: '式', price: 260000 },
+      '避難口誘導灯C級片面(FA10312CLE1)': { unit: '台', price: 25000 },
+      '室内通路誘導灯C級両面(FA10322CLE1)': { unit: '台', price: 26500 },
+      '誘導灯配線工事費': { unit: '式', price: 330000 },
+      '誘導灯機器取付工事費': { unit: '式', price: 120000 },
+      '消火器埋込タイプ(UFB-1F-3025)': { unit: '個', price: 23000 },
+      '消火器据え置きタイプ(SK-FEB-FG310)': { unit: '個', price: 10500 },
+      '消火器(粉末ABC10型)': { unit: '個', price: 5000 }
+    },
+    ems: {
+      'MVVS1.25sq-2C': { unit: 'm', price: 240 },
+      'MVVS1.25sq-4C': { unit: 'm', price: 385 },
+      'Cate5E': { unit: 'm', price: 120 },
+      'Cate6':  { unit: 'm', price: 200 },
+      'Bルート申請作業': { unit: '式', price: 40000 },
+      '室温センサー工事': { unit: '式', price: 45000 },
+      '水道計測センサー工事': { unit: '式', price: 45000 },
+      '温湿度水道センサー配線接続工事': { unit: '式', price: 99000 },
+      'エネミエール配線接続工事': { unit: '式', price: 185000 },
+      'EMS集中盤取付け管配線接続工事': { unit: '式', price: 70000 },
+      'スマートメーター配線配管工事': { unit: '式', price: 70000 }
+    }
+  },
+
+  mechanicalPrices: {
+    waterSupply: {
+      'HIVP50': { unit: 'm', price: 2455 },
+      'HIVP25': { unit: 'm', price: 1255 },
+      'HIVP20': { unit: 'm', price: 770 },
+      '給水繋ぎ手・接合剤': { unit: '式', price: 60000 },
+      '給排水管施工費': { unit: 'm', price: 5000 },
+      '配管支持金具': { unit: '式', price: 200000 },
+      'ゲートバルブ': { unit: '式', price: 66000 },
+      '保温工事（AJGC20mm厚）': { unit: 'm', price: 3850 }
+    },
+    drainage: {
+      'VP75': { unit: 'm', price: 2280 },
+      'VP65': { unit: 'm', price: 1520 },
+      'VP50': { unit: 'm', price: 1240 },
+      'VP40': { unit: 'm', price: 900 },
+      '排水桝及び排水目皿設置': { unit: '式', price: 48000 },
+      '既存管接続': { unit: 'ヶ所', price: 33000 },
+      '圧送ポンプ系統配管（保温・全ネジ固定込み）': { unit: 'm', price: 10500 },
+      '排水管施工費': { unit: 'm', price: 5000 }
+    },
+    sanitary: {
+      '雑排NSBスマートポンプ（ZA-100NSB+）': { unit: '個', price: 440000 },
+      '厨房用バスケット桝（STU-35）': { unit: '個', price: 88000 },
+      '衛生器具設置（トイレ・SK・手洗い）': { unit: '台', price: 30000 },
+      '洗濯機パン設置': { unit: '台', price: 16500 },
+      '休憩室流し台設置': { unit: '台', price: 30000 },
+      '売場手洗器設置': { unit: '台', price: 30000 },
+      '厨房用水栓取付（フレキ管・止水栓込み）': { unit: '式', price: 75000 },
+      'バリアフリートイレ（LSD-8）': { unit: '台', price: 600000 },
+      '1窓用トイレ呼出壁付型表示器（CBN-1C）': { unit: '台', price: 126060 }
+    },
+    hvac: {
+      '高効率ビル用マルチ組合20馬力（PA-P560UX6）': { unit: '式', price: 1100000 },
+      '高効率ビル用マルチ組合18馬力（PA-P500UX6）': { unit: '式', price: 920000 },
+      'ビル用ビルトインオルダクト形（CS-P90FE6U）': { unit: '台', price: 105000 },
+      'ビル用4方向天井カセット形（CS-P160U6U）': { unit: '台', price: 132000 },
+      '壁掛けエアコン室内外セット（XCS-285DFL-W/S）': { unit: '式', price: 89210 },
+      '4方向天井カセットECOツイン（PA-P280U7B x2）': { unit: '式', price: 494560 },
+      '1方向天井カセットEco（PA-P40DM7HNB）': { unit: '式', price: 145000 },
+      '1方向天井カセットEco（PA-P40U7HB）': { unit: '式', price: 134100 },
+      '4方向天井カセットEco（PA-P63U7HNB）': { unit: '式', price: 180000 },
+      'オールフレッシュ仕様工場改造費': { unit: '式', price: 320000 },
+      '安全遮断弁（CZ-P160BU6）': { unit: '台', price: 132000 },
+      '冷媒漏洩検知警報機（CZ-RLDS1）': { unit: '台', price: 26500 },
+      '冷媒管（6.4-12.7A）': { unit: 'm', price: 4000 },
+      '冷媒管（9.5-15.9A）': { unit: 'm', price: 5200 },
+      '冷媒管（12.7-25.1A）': { unit: 'm', price: 8800 },
+      '冷媒管（15.9-28.6A）': { unit: 'm', price: 13200 },
+      '冷媒管継手材': { unit: '式', price: 260000 },
+      '冷媒配管施工費': { unit: '式', price: 770000 },
+      'ドレン管（VP-25A）': { unit: 'm', price: 440 },
+      '搬入工事/設置費用': { unit: '式', price: 400000 },
+      '内機設置工事費（開口・パネル含）': { unit: '式', price: 320000 },
+      'ガスチャージ': { unit: '式', price: 180000 },
+      '機密検査/ガス圧': { unit: '式', price: 80000 },
+      '耐火処理（材工共）': { unit: '式', price: 180000 },
+      '試運転調整費': { unit: '式', price: 45000 }
+    },
+    ventilation: {
+      '排気ファン新キャビネット消音（FY-28SCX3）': { unit: '台', price: 205000 },
+      'ロスナイ（FY-150ZB10）': { unit: '台', price: 135000 },
+      'ロスナイ（FY-15ZBG3）': { unit: '台', price: 84000 },
+      'カラットデシカント（DES・DX10）': { unit: '台', price: 1980000 },
+      'カラットデシカント用遠方操作盤（EMS対応品）': { unit: '式', price: 1450000 },
+      'カラットデシカント本体改造費': { unit: '式', price: 300000 },
+      'デシカント運送費': { unit: '式', price: 175000 },
+      'デシカント試運転調整費': { unit: '式', price: 220000 },
+      '防振ハンガー': { unit: 'セット', price: 26500 },
+      '角材/亜鉛ダクト（0.6t 材工共）': { unit: 'm2', price: 10500 },
+      '角材/亜鉛ダクト（0.8t 材工共・口加工費含む）': { unit: 'm2', price: 21600 },
+      '保温施工（GW25t 材工共）': { unit: '式', price: 990000 },
+      'スパイラルダクト（亜鉛 300A 材工共）': { unit: 'm', price: 8500 },
+      'スパイラルダクト（亜鉛 250A 材工共）': { unit: 'm', price: 7500 },
+      'スパイラルダクト（亜鉛 200A 材工共）': { unit: 'm', price: 6200 },
+      'スパイラルダクト（亜鉛 150A 材工共）': { unit: 'm', price: 5100 },
+      'スパイラルダクト（亜鉛 100A 材工共）': { unit: 'm', price: 3500 },
+      'VHS（500x500）': { unit: '台', price: 62000 },
+      'VHS（450x450）': { unit: '台', price: 53000 },
+      'VHS（350x350）': { unit: '台', price: 36000 },
+      'WC（三菱電機 W-35SDB(M)）': { unit: '台', price: 80000 },
+      '外部開口工事（76か所）': { unit: '式', price: 200000 }
+    },
+    fireProtection: {} // 西一之江では電気側に計上のため空
+  },
+
+  specialConditions: [
+    '日中工事（本工事）／一部日中工事、基本夜間工事（最終差額）',
+    '事前確認: 特定解体工事発注者住所、第一種特定製品設置有無',
+    '現場管理費根拠: 90日 × 25,000円 × 1名 = 2,250,000円',
+    '見積有効期限: 提出後30日',
+    '支払条件: 規定通り'
+  ],
+
+  notes: '本工事は㈰_20250724(¥95M)が唯一の本見積。後続11件は追加・増減見積。既存建屋改修ベースのため鉄筋・石・タイル工事は0計上、防災設備は電気側に独立計上。延床面積の記載がないため costPerM2 は算出不能。デシカント機器(DES・DX10 ¥1,980,000)は座間林間と同型・同単価で価格妥当性が確認できる。'
+};
+
+// ============================
+// 全プロジェクトコレクション（v2 新コードはこちらを使用）
+// ============================
+REFERENCE_DATA.PROJECTS = {
+  zamaRinkan: {
+    project: REFERENCE_DATA.project,
+    categories: REFERENCE_DATA.categories,
+    costStructure: REFERENCE_DATA.costStructure,
+    architectureBreakdown: REFERENCE_DATA.architectureBreakdown,
+    electricalBreakdown: REFERENCE_DATA.electricalBreakdown,
+    mechanicalBreakdown: REFERENCE_DATA.mechanicalBreakdown,
+    unitPrices: REFERENCE_DATA.unitPrices,
+    electricalPrices: REFERENCE_DATA.electricalPrices,
+    mechanicalPrices: REFERENCE_DATA.mechanicalPrices,
+    costPerM2ByCategory: REFERENCE_DATA.costPerM2ByCategory,
+    specialConditions: REFERENCE_DATA.specialConditions
+  },
+  nishiIchinoe: NISHI_ICHINOE
+};
+REFERENCE_DATA.PRIMARY_PROJECT = 'zamaRinkan';
+
+// プロジェクト選定ヒント: 入力内容（用途・規模）から最適な参照プロジェクトを選ぶ
+//  - 新店S造・延床1000m2超・新築 → zamaRinkan
+//  - 既存建屋改修・内装中心・延床1000m2未満 → nishiIchinoe
+//  - 両方参照（両方の単価を比較したい）→ 'both'
+REFERENCE_DATA.projectSelectionHints = {
+  '新店S造（新築）': 'zamaRinkan',
+  '既存建屋改修（内装中心）': 'nishiIchinoe',
+  '小規模スーパー改修': 'nishiIchinoe',
+  '大規模新店': 'zamaRinkan'
 };
 
 // Node.js環境向けエクスポート

@@ -1423,7 +1423,7 @@ function renderEstimateTab(est, summary, categories, accuracy, validation) {
     <div class="estimate-doc">
       <div class="est-header">
         <h2>概算御見積書</h2>
-        <div class="est-sub">AI自動生成（参照: 西友座間林間店 新店工事 / 6体AIエージェント解析）</div>
+        <div class="est-sub">AI自動生成（参照: 西友座間林間店 + 西友西一之江店 / 6体AIエージェント解析）</div>
         <div class="est-meta">
           <dt>工事名称</dt><dd>${esc(projName)}</dd>
           <dt>日付</dt><dd>${est.date || new Date().toLocaleDateString('ja-JP')}</dd>
@@ -1575,7 +1575,7 @@ function renderComparisonTab(qs, est) {
   let html = `<div class="comparison-grid">
     <div class="comp-card">
       <h4>&#x1f4ca; 工種別金額比較</h4>
-      <p style="font-size:11px;color:var(--text-sub);margin-bottom:12px;">参照: 西友座間林間店 新店工事（税抜 ${fmt(refTotal)}円 / ${refArea}m2）</p>`;
+      <p style="font-size:11px;color:var(--text-sub);margin-bottom:12px;">参照: 西友座間林間店（税抜 ${fmt(refTotal)}円 / ${refArea}m2）+ 西友西一之江店（税抜 95,000,000円・既存建屋改修）</p>`;
 
   const maxVal = Math.max(refTotal, newTotal || 1);
   for (const [name, refAmt] of Object.entries(refCosts)) {
