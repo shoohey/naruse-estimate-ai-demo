@@ -614,7 +614,7 @@ async function handleGroupMode(req, res, apiKey, pdfs, projectName, clientName, 
         runAgentFn(apiKey, i + j + 1, a.name, a.system, [
           ...pdfContents,
           { type: 'text', text: `この建設プロジェクトのPDF図面を解析してください。\n${ctx}` }
-        ], { model: MODEL_FAST, maxTokens: MAX_TOKENS_DEFAULT, temperature: 0.2, maxRetries: 3, baseWaitSec: 20 }, send)
+        ], { model: MODEL_FAST, maxTokens: MAX_TOKENS_DEFAULT, temperature: 0.2, maxRetries: 2, baseWaitSec: 10, timeoutMs: 120000 }, send)
       ));
       results.push(...batchResults);
       if (i + 2 < AGENT_PROMPTS.length) await delay(3000);

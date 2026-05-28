@@ -538,13 +538,22 @@ async function analyzeViaServer() {
     // ============================
     const totalGroupCount = allGroups.length;
 
-    // 動的バッチサイズ: グループ数が多いほど保守的に
-    const batchSize = totalGroupCount > 20 ? 1 : totalGroupCount > 8 ? 2 : 3;
-    // レートリミット待機時間(大量グループは長め)
-    const interBatchWaitMs = totalGroupCount > 20 ? 20000 : totalGroupCount > 8 ? 15000 : 10000;
+    // 動的バッチサイズ: Haiku 4.5 はレート制限が緩いので積極的に並列化
+    // ※ rate_limit エラーを検知したら下のループで自動的に待機を延長する
+    const batchSize = totalGroupCount > 30 ? 3 : totalGroupCount > 8 ? 3 : 4;
+    // レートリミット用バッチ間待機(検知時に動的延長するため let)
+    let interBatchWaitMs = totalGroupCount > 30 ? 8000 : totalGroupCount > 15 ? 6000 : totalGroupCount > 8 ? 5000 : 4000;
+    let rateLimitAdaptive = false; // rate_limit 検知時に true、待機を25秒に切り替える
 
-    addLog(`大容量PDF: ${totalGroupCount}グループ（バッチ${batchSize}並列 / 待機${interBatchWaitMs/1000}秒）`, 'log-info');
-    handleSSE({ type: 'phase', phase: 1, message: `Phase 1: ${totalGroupCount}グループを順次解析中...` });
+    // 推定所要時間: 1グループあたり Haiku 4並列で ~25秒 と仮定
+    const estBatches = Math.ceil(totalGroupCount / batchSize);
+    const estTotalSec = estBatches * 25 + (estBatches - 1) * (interBatchWaitMs / 1000);
+    const estMin = Math.ceil(estTotalSec / 60);
+    addLog(`大容量PDF: ${totalGroupCount}グループ（バッチ${batchSize}並列 / 待機${interBatchWaitMs/1000}秒） — 推定所要時間 約${estMin}分`, 'log-info');
+    handleSSE({ type: 'phase', phase: 1, message: `Phase 1: ${totalGroupCount}グループを並列解析中（推定 約${estMin}分）...` });
+
+    // Phase 1 ハードタイムアウト: 28分を超えたら部分結果で Phase 2 に進む(完全停止の防止)
+    const PHASE1_HARD_TIMEOUT_MS = 28 * 60 * 1000;
 
     // 単一グループを解析する関数(成功なら結果、失敗なら null)
     const failureReasons = { rate_limit: 0, overloaded: 0, format: 0, timeout: 0, network: 0, other: 0 };
@@ -620,7 +629,16 @@ async function analyzeViaServer() {
     const phase1StartTime = Date.now();
 
     // === 1巡目: 全グループ処理 ===
+    let abortedByTimeout = false;
     for (let batchStart = 0; batchStart < totalGroupCount; batchStart += batchSize) {
+      // ハードタイムアウト: 28分超過で残りグループを諦めて Phase 2 へ
+      if (Date.now() - phase1StartTime > PHASE1_HARD_TIMEOUT_MS) {
+        const remaining = totalGroupCount - batchStart;
+        addLog(`⏱ Phase 1 が28分を超過 → 残${remaining}グループを諦めて Phase 2 に進みます（成功${groupResults.length}グループで継続）`, 'log-info');
+        abortedByTimeout = true;
+        break;
+      }
+
       const batch = allGroups.slice(batchStart, batchStart + batchSize);
       const batchResults = await Promise.all(batch.map(g => processGroup(g)));
 
@@ -629,6 +647,13 @@ async function analyzeViaServer() {
         else failedGroups.push(g);
       });
       completedGroups += batch.length;
+
+      // レート制限を検知したらバッチ間待機を25秒に延長(一度だけ切替)
+      if (!rateLimitAdaptive && failureReasons.rate_limit > 0) {
+        rateLimitAdaptive = true;
+        interBatchWaitMs = 25000;
+        addLog(`⚠ レート制限を検知 → バッチ間待機を${interBatchWaitMs/1000}秒に延長`, 'log-info');
+      }
 
       const elapsedSec = (Date.now() - phase1StartTime) / 1000;
       const avgSecPerGroup = elapsedSec / completedGroups;
@@ -649,18 +674,29 @@ async function analyzeViaServer() {
       }
     }
 
-    // === 失敗グループのリトライ(最大2回、待機時間を長く) ===
-    for (let retryRound = 1; retryRound <= 2 && failedGroups.length > 0; retryRound++) {
-      addLog(`⟲ リトライ${retryRound}回目: ${failedGroups.length}グループ再試行（30秒待機後）`, 'log-info');
-      await new Promise(r => setTimeout(r, 30000));
+    // === 失敗グループのリトライ(最大2回、ハードタイムアウト内のみ) ===
+    for (let retryRound = 1; retryRound <= 2 && failedGroups.length > 0 && !abortedByTimeout; retryRound++) {
+      // タイムアウト超過ならリトライ自体をスキップ
+      if (Date.now() - phase1StartTime > PHASE1_HARD_TIMEOUT_MS) {
+        addLog(`⏱ Phase 1 タイムアウト超過 → リトライをスキップ（${failedGroups.length}グループ失敗のまま Phase 2 へ）`, 'log-info');
+        abortedByTimeout = true;
+        break;
+      }
+      addLog(`⟲ リトライ${retryRound}回目: ${failedGroups.length}グループ再試行（20秒待機後）`, 'log-info');
+      await new Promise(r => setTimeout(r, 20000));
 
       const stillFailed = [];
       for (const g of failedGroups) {
+        // リトライ中もタイムアウト判定
+        if (Date.now() - phase1StartTime > PHASE1_HARD_TIMEOUT_MS) {
+          stillFailed.push(g);
+          continue;
+        }
         const result = await processGroup(g, `リトライ${retryRound} G${g.groupIndex + 1}`);
         if (result) groupResults.push(result);
         else stillFailed.push(g);
-        // 1グループずつ実行、間隔を長めに
-        await new Promise(r => setTimeout(r, 15000));
+        // 1グループずつ実行、間隔を短めに(タイムアウト圧縮)
+        await new Promise(r => setTimeout(r, 8000));
       }
       failedGroups = stillFailed;
     }
