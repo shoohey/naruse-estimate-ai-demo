@@ -674,11 +674,13 @@ async function handleFinalMode(req, res, apiKey, mergedResults, projectName, cli
       send);
 
     // Phase 3: 見積書整形 (Sonnet)
+    // 入力圧縮: r5 が大規模だと Sonnet の処理が180s超えで落ちるため、整形に不要なフィールドを削除し items を上限化
     send('phase', { phase: 3, message: 'Phase 3: 見積書生成AIが最終見積書を整形中...' });
+    const compactR5ForAgent6 = compactEstimateForFormatting(r5);
     const r6 = await runAgentFn(apiKey, 6, '見積書生成AI',
-      getAgent6Prompt(r5, r4),
+      getAgent6Prompt(compactR5ForAgent6, r4),
       [{ type: 'text', text: '上記の指示に従い、御見積書を完成させてください。' }],
-      { model: MODEL_PRIMARY, maxTokens: MAX_TOKENS_REASONING, temperature: 0.1 },
+      { model: MODEL_PRIMARY, maxTokens: 14000, temperature: 0.1, timeoutMs: 210000, maxRetries: 1 },
       send);
 
     // Phase 4: 精度検証 (Opus + Extended Thinking) - 時間予算が足りないならスキップ
@@ -710,7 +712,18 @@ async function handleFinalMode(req, res, apiKey, mergedResults, projectName, cli
     }
 
     // r7 に修正済み estimate があればそれを最終版、なければ r6 を使う
-    const finalEstimate = (r7 && r7.estimate) ? { agent: '見積書生成AI(検証済み)', estimate: r7.estimate } : r6;
+    // ただし r6 が error の場合は r5 を見積書フォーマットへ変換してフォールバック
+    let finalEstimate;
+    if (r7 && r7.estimate) {
+      finalEstimate = { agent: '見積書生成AI(検証済み)', estimate: r7.estimate };
+    } else if (r6 && !r6.error && r6.estimate) {
+      finalEstimate = r6;
+    } else {
+      // Agent 6 失敗時のフォールバック: Agent 5 の r5 を見積書フォーマットに変換
+      const fallbackReason = r6?.error ? `Agent 6エラー(${r6.error})` : 'Agent 6結果なし';
+      send('agent_fallback', { agent: 6, name: '見積書生成AI', reason: fallbackReason, fallbackTo: 'Agent 5 (数量積算AI)' });
+      finalEstimate = buildFallbackEstimateFromR5(r5, projectName, clientName, fallbackReason);
+    }
 
     send('complete', {
       phases: {
@@ -723,6 +736,106 @@ async function handleFinalMode(req, res, apiKey, mergedResults, projectName, cli
   }
 
   res.end();
+}
+
+// ============================
+// Agent 6 入力圧縮: 整形に不要なフィールドを削除し items を上限化
+// ============================
+function compactEstimateForFormatting(r5) {
+  if (!r5 || typeof r5 !== 'object' || r5.error) return r5;
+  const ITEM_LIMIT = 40; // カテゴリあたりの最大items数
+  const stripItem = (i) => ({
+    name: i?.name,
+    spec: i?.spec,
+    quantity: i?.quantity,
+    unit: i?.unit,
+    unitPrice: i?.unitPrice,
+    amount: i?.amount
+    // basis フィールドは削除(整形には不要、長文化の原因)
+  });
+  const compactCategory = (c) => {
+    const out = { id: c?.id, name: c?.name, amount: c?.amount };
+    if (Array.isArray(c?.items)) out.items = c.items.slice(0, ITEM_LIMIT).map(stripItem);
+    if (Array.isArray(c?.subcategories)) {
+      out.subcategories = c.subcategories.map(s => ({
+        name: s?.name,
+        amount: s?.amount,
+        items: Array.isArray(s?.items) ? s.items.slice(0, ITEM_LIMIT).map(stripItem) : []
+      }));
+    }
+    return out;
+  };
+  return {
+    agent: r5.agent,
+    projectSummary: r5.projectSummary,
+    categories: Array.isArray(r5.categories) ? r5.categories.map(compactCategory) : [],
+    directCostTotal: r5.directCostTotal,
+    feeBreakdown: r5.feeBreakdown,
+    discount: r5.discount,
+    totalBeforeTax: r5.totalBeforeTax,
+    tax: r5.tax,
+    totalWithTax: r5.totalWithTax
+    // selfCheck / raw / _parseError 等は削除
+  };
+}
+
+// ============================
+// Agent 6 失敗時のフォールバック: r5 (数量積算結果) から見積書フォーマットを構築
+// ============================
+function buildFallbackEstimateFromR5(r5, projectName, clientName, reason) {
+  if (!r5 || r5.error) {
+    return {
+      agent: '見積書生成AI(フォールバック失敗)',
+      error: `Agent 6 失敗かつ Agent 5 も無効: ${reason}`
+    };
+  }
+  const ps = r5.projectSummary || {};
+  const fee = r5.feeBreakdown || {};
+  const directCost = r5.directCostTotal || 0;
+  const totalBeforeTax = r5.totalBeforeTax || 0;
+  const tax = r5.tax || Math.round(totalBeforeTax * 0.1);
+  const totalWithTax = r5.totalWithTax || (totalBeforeTax + tax);
+
+  return {
+    agent: '見積書生成AI(Agent 5フォールバック)',
+    fallbackInfo: {
+      reason,
+      note: 'Agent 6 がタイムアウトしたため、Agent 5(数量積算AI)の結果を見積書として表示しています。精度は通常版とほぼ同等ですが、整形が簡略化されています。'
+    },
+    estimate: {
+      title: '概算御見積書',
+      subtitle: 'AI自動生成(Agent 5 フォールバック)',
+      date: new Date().toLocaleDateString('ja-JP'),
+      projectName: projectName || ps.name || '',
+      clientName: clientName || '',
+      location: '',
+      buildingInfo: [ps.use, ps.structure, ps.floors ? `${ps.floors}階` : '', ps.totalFloorArea ? `${ps.totalFloorArea}m2` : ''].filter(Boolean).join(' / '),
+      summary: {
+        directCostTotal: directCost,
+        managementFee: fee.managementFee || 0,
+        designFee: fee.designFee || 0,
+        overhead: fee.overhead || 0,
+        subtotalBeforeDiscount: directCost + (fee.managementFee || 0) + (fee.designFee || 0) + (fee.overhead || 0),
+        discount: r5.discount || 0,
+        constructionPrice: directCost + (fee.managementFee || 0) + (fee.designFee || 0) + (fee.overhead || 0) - (r5.discount || 0),
+        legalWelfare: fee.legalWelfare || 0,
+        totalBeforeTax,
+        tax,
+        totalWithTax
+      },
+      categories: Array.isArray(r5.categories) ? r5.categories : [],
+      accuracy: {
+        grade: 'B',
+        range: '±20%',
+        note: 'Agent 5 結果のフォールバック表示。Agent 6 整形/Agent 7 検証は実行されていません',
+        comparisonWithReference: ps.referenceM2Cost && ps.estimatedM2Cost
+          ? `参照m2単価 ${ps.referenceM2Cost.toLocaleString()}円 / 推定m2単価 ${ps.estimatedM2Cost.toLocaleString()}円`
+          : ''
+      },
+      assumptions: ['本見積書は Agent 6 タイムアウトのため Agent 5 の積算結果をそのまま表示しています', '通常運用時より整形が簡略化されています', '数値の整合性は Agent 5 が保証しています'],
+      exclusions: ['消費税以外の租税公課', '別途指定外の特殊工事', '通常の建築工事範囲外の項目']
+    }
+  };
 }
 
 // ============================
@@ -832,11 +945,12 @@ module.exports = async function handler(req, res) {
       [{ type: 'text', text: '上記の指示に従い、概算見積もりを作成してください。' }],
       { model: MODEL_REASONING, maxTokens: MAX_TOKENS_REASONING, thinking: true }, send);
 
-    // Phase 3: 見積書整形
+    // Phase 3: 見積書整形 (Sonnet) — 入力圧縮&maxTokens削減&タイムアウト延長
     send('phase', { phase: 3, message: 'Phase 3: 見積書生成AIが最終見積書を整形中...' });
-    const r6 = await runAgentFn(apiKey, 6, '見積書生成AI', getAgent6Prompt(r5, r4),
+    const compactR5ForAgent6Default = compactEstimateForFormatting(r5);
+    const r6 = await runAgentFn(apiKey, 6, '見積書生成AI', getAgent6Prompt(compactR5ForAgent6Default, r4),
       [{ type: 'text', text: '上記の指示に従い、御見積書を完成させてください。' }],
-      { model: MODEL_PRIMARY, maxTokens: MAX_TOKENS_REASONING, temperature: 0.1 }, send);
+      { model: MODEL_PRIMARY, maxTokens: 14000, temperature: 0.1, timeoutMs: 210000, maxRetries: 1 }, send);
 
     // Phase 4: 検証
     send('phase', { phase: 4, message: 'Phase 4: 精度検証AIが整合性をチェック中...' });
@@ -844,7 +958,17 @@ module.exports = async function handler(req, res) {
       [{ type: 'text', text: '上記の指示に従い、見積書を厳密に検証し確定版を出力してください。' }],
       { model: MODEL_REASONING, maxTokens: MAX_TOKENS_REASONING, thinking: true }, send);
 
-    const finalEstimate = (r7 && r7.estimate) ? { agent: '見積書生成AI(検証済み)', estimate: r7.estimate } : r6;
+    // r7 / r6 / r5 の順でフォールバック
+    let finalEstimate;
+    if (r7 && r7.estimate) {
+      finalEstimate = { agent: '見積書生成AI(検証済み)', estimate: r7.estimate };
+    } else if (r6 && !r6.error && r6.estimate) {
+      finalEstimate = r6;
+    } else {
+      const fallbackReason = r6?.error ? `Agent 6エラー(${r6.error})` : 'Agent 6結果なし';
+      send('agent_fallback', { agent: 6, name: '見積書生成AI', reason: fallbackReason, fallbackTo: 'Agent 5 (数量積算AI)' });
+      finalEstimate = buildFallbackEstimateFromR5(r5, projectName, clientName, fallbackReason);
+    }
 
     send('complete', {
       phases: {
