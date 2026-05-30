@@ -163,8 +163,8 @@ async function callClaude(apiKey, userContent, systemPrompt, opts = {}) {
 }
 
 async function callClaudeWithRetry(apiKey, userContent, systemPrompt, opts, send, agentNum, agentName) {
-  const maxRetries = (opts && opts.maxRetries != null) ? opts.maxRetries : 4;
-  const baseWait = (opts && opts.baseWaitSec != null) ? opts.baseWaitSec : 30;
+  const maxRetries = (opts && opts.maxRetries != null) ? opts.maxRetries : 3;
+  const baseWait = (opts && opts.baseWaitSec != null) ? opts.baseWaitSec : 15;
   let currentOpts = { ...opts };
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
@@ -181,7 +181,7 @@ async function callClaudeWithRetry(apiKey, userContent, systemPrompt, opts, send
         continue;
       }
       if (recoverable && attempt < maxRetries) {
-        const waitSec = Math.min(60, (attempt + 1) * (err.isRateLimit ? baseWait : Math.max(5, baseWait / 3)));
+        const waitSec = Math.min(50, (attempt + 1) * (err.isRateLimit ? baseWait : Math.max(5, baseWait / 3)));
         if (send) send('agent_retry', { agent: agentNum, name: agentName, attempt: attempt + 1, waitSec, reason: err.isRateLimit ? 'rate_limit' : 'overloaded' });
         await delay(waitSec * 1000);
         continue;
@@ -568,9 +568,32 @@ async function runAgentFn(apiKey, num, name, systemPrompt, userContent, opts, se
 // ============================
 function setupSSE(res) {
   res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
+  // no-transform: 企業プロキシ/CDNによるレスポンス変換・バッファリングを禁止
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
+  if (typeof res.flushHeaders === 'function') { try { res.flushHeaders(); } catch {} }
+
+  // ストリームを即時オープン(プロキシのバッファ閾値待ちを防ぐ)
+  try { res.write(': open\n\n'); } catch {}
+
+  // ★ハートビート: 10秒ごとにコメント行を送出。
+  //   - 企業プロキシのアイドルタイムアウト切断(一般に30〜60秒)を防止
+  //   - クライアント側のアイドルウォッチドッグが「生存中」と「死亡」を区別できるようにする
+  //   - エージェント実行中(最大210秒)もコネクションを維持
+  const heartbeat = setInterval(() => {
+    try { res.write(`: keepalive ${Date.now()}\n\n`); } catch {}
+  }, 10000);
+  if (heartbeat && typeof heartbeat.unref === 'function') heartbeat.unref();
+
+  // res.end を一度だけラップし、終了時に必ずハートビートを停止
+  const originalEnd = res.end.bind(res);
+  let ended = false;
+  res.end = (...args) => {
+    if (!ended) { ended = true; clearInterval(heartbeat); }
+    return originalEnd(...args);
+  };
+
   return (type, data) => {
     try { res.write(`data: ${JSON.stringify({ type, ...data })}\n\n`); } catch {}
   };
@@ -644,7 +667,7 @@ async function handleFinalMode(req, res, apiKey, mergedResults, projectName, cli
   const send = setupSSE(res);
   const T0 = Date.now();
   // Vercel maxDuration 300秒に対して、安全マージン 30秒を残して他工程を終える
-  const TIME_BUDGET_MS = 270000;
+  const TIME_BUDGET_MS = 250000;
   const elapsed = () => Date.now() - T0;
   const remainingMs = () => TIME_BUDGET_MS - elapsed();
 
@@ -685,7 +708,7 @@ async function handleFinalMode(req, res, apiKey, mergedResults, projectName, cli
 
     // Phase 4: 精度検証 (Opus + Extended Thinking) - 時間予算が足りないならスキップ
     let r7 = null;
-    const AGENT7_MIN_BUDGET_MS = 70000; // Opus4.7+thinking に最低70秒は必要
+    const AGENT7_MIN_BUDGET_MS = 60000; // Opus4.7+thinking に最低60秒は必要
     if (remainingMs() < AGENT7_MIN_BUDGET_MS) {
       send('phase', { phase: 4, message: `Phase 4: 時間予算不足(残${Math.round(remainingMs()/1000)}秒) — 精度検証AIをスキップ` });
       send('agent_error', { agent: 7, name: '精度検証AI', error: `時間予算不足でスキップ(Phase 2+3で${Math.round(elapsed()/1000)}秒消費)`, elapsed: '0.0' });
@@ -733,6 +756,8 @@ async function handleFinalMode(req, res, apiKey, mergedResults, projectName, cli
     });
   } catch (err) {
     send('error', { message: err.message });
+    // クライアントが必ず終端イベントを受け取れるよう、失敗フラグ付きの complete も送る
+    send('complete', { phases: {}, failed: true });
   }
 
   res.end();
@@ -978,6 +1003,8 @@ module.exports = async function handler(req, res) {
     });
   } catch (err) {
     send('error', { message: err.message || 'エラーが発生しました' });
+    // クライアントが必ず終端イベントを受け取れるよう、失敗フラグ付きの complete も送る
+    send('complete', { phases: {}, failed: true });
   }
 
   res.end();

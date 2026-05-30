@@ -194,9 +194,13 @@ details.api-key-section input { flex: 1; }
   @page { size: A4 landscape; margin: 10mm; }
 }
 </style>
-<script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script>if(typeof pdfjsLib!=='undefined')pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
+<!-- PDFライブラリは同一オリジンの vendor/ を優先読込。社内ファイアウォールがCDNを遮断しても動作する。
+     ローカルが何らかの理由で読めない場合のみ、document.write でCDNへ同期フォールバックする。 -->
+<script src="/vendor/pdf-lib.min.js"></script>
+<script>window.PDFLib||document.write('<script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"><\/script>');</script>
+<script src="/vendor/pdf.min.js"></script>
+<script>window.pdfjsLib||document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"><\/script>');</script>
+<script>if(window.pdfjsLib){pdfjsLib.GlobalWorkerOptions.workerSrc='/vendor/pdf.worker.min.js';}</script>
 </head>
 <body>
 
@@ -450,12 +454,52 @@ function addLog(msg, cls = '') {
 // ============================
 // Main Analysis (Server Mode)
 // ============================
+// ============================
+// 致命的失敗時の確実な画面表示(無出力の握りつぶしを防ぐ)
+// どの終了経路でも、見積書が出せない場合は必ずこのエラーパネルを描画する。
+// ============================
+let fatalShown = false;
+function showErrorState(message) {
+  fatalShown = true;
+  const banner = document.getElementById('phaseBanner');
+  if (banner) banner.innerHTML = '&#9888;&#65039; <span>処理が中断されました</span>';
+  const pb = document.getElementById('progressBar'); if (pb) pb.style.width = '0%';
+  const rs = document.getElementById('resultsSection');
+  if (rs) {
+    rs.style.display = 'block';
+    let panel = document.getElementById('fatalErrorPanel');
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.id = 'fatalErrorPanel';
+      rs.insertBefore(panel, rs.firstChild);
+    }
+    panel.innerHTML = `
+      <div style="max-width:720px;margin:20px auto;padding:26px 30px;background:#fff;border:1px solid #e2e8f0;border-left:4px solid #c53030;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.06);">
+        <div style="font-size:16px;font-weight:700;color:#c53030;margin-bottom:10px;">&#9888;&#65039; 見積書を生成できませんでした</div>
+        <p style="font-size:14px;color:#1a1a2e;line-height:1.9;margin:0 0 16px;">${esc(message)}</p>
+        <div style="font-size:13px;color:#4a5568;line-height:1.9;background:#f5f7fa;border-radius:6px;padding:14px 18px;margin-bottom:18px;">
+          <strong>対処方法</strong><br>
+          &#9312; 数分おいて下の「もう一度実行」を押す<br>
+          &#9313; 社内ネットワークの場合は別回線(スマホのテザリング等)で試す<br>
+          &#9314; PDFが大きい場合は分割(1ファイル20MB以下)して再アップロード<br>
+          &#9315; 解決しない場合は、上のログ画面のメッセージを添えて管理者へ連絡
+        </div>
+        <button onclick="location.reload()" style="background:#1e3a5f;color:#fff;border:none;border-radius:8px;padding:11px 22px;font-size:14px;font-weight:700;cursor:pointer;">&#128260; もう一度実行</button>
+      </div>`;
+    try { rs.scrollIntoView({ behavior: 'smooth' }); } catch {}
+  }
+  const btn = document.getElementById('generateBtn'); if (btn) btn.disabled = false;
+}
+
 let analysisRunning = false;
 async function startAnalysis() {
   if (analysisRunning) return;
   analysisRunning = true;
   const btn = document.getElementById('generateBtn');
   btn.disabled = true;
+  // 前回の致命的エラーパネルをクリア
+  fatalShown = false;
+  const oldPanel = document.getElementById('fatalErrorPanel'); if (oldPanel) oldPanel.remove();
 
   document.getElementById('agentsSection').style.display = 'block';
   document.getElementById('resultsSection').style.display = 'none';
@@ -501,6 +545,9 @@ async function startAnalysis() {
     } else {
       await analyzeViaBrowser();
     }
+  } catch (err) {
+    addLog(`致命的エラー: ${err.message}`, 'log-error');
+    if (!fatalShown) showErrorState(`予期しないエラーが発生しました: ${err.message}`);
   } finally {
     analysisRunning = false;
     btn.disabled = false;
@@ -516,12 +563,20 @@ async function analyzeViaServer() {
     // Split all PDFs into groups
     const allGroups = [];
     for (const f of uploadedFiles) {
-      const groups = await splitPdfIntoGroups(f);
-      allGroups.push(...groups);
+      try {
+        const groups = await splitPdfIntoGroups(f);
+        allGroups.push(...groups);
+      } catch (err) {
+        showErrorState(`「${f.name}」のPDF読み込み・分割に失敗しました: ${err.message}`);
+        return;
+      }
     }
 
     const totalBase64Size = allGroups.reduce((s, g) => s + (g.sizeBytes || 0), 0);
     addLog(`合計 ${allGroups.length} グループ（${(totalBase64Size / 1024 / 1024).toFixed(1)}MB）`, 'log-info');
+    if (totalBase64Size > 50 * 1024 * 1024) {
+      addLog('⚠ 合計50MB超 — クラウド版は分割数が増え不安定になりやすいです。可能ならPDFを分けて実行してください', 'log-info');
+    }
 
     if (allGroups.length === 1 && totalBase64Size <= SAFE_BASE64_BYTES && !allGroups[0].contentType) {
       // 単一・小サイズPDF - 一括処理
@@ -530,7 +585,9 @@ async function analyzeViaServer() {
         projectName: document.getElementById('projectName').value,
         clientName: document.getElementById('clientName').value
       });
-      return processSSEResponse(response);
+      await processSSEResponse(response);
+      if (!allResults && !fatalShown) showErrorState('サーバーから見積書データが返りませんでした。時間を置いて再度お試しください。');
+      return;
     }
 
     // ============================
@@ -540,9 +597,11 @@ async function analyzeViaServer() {
 
     // 動的バッチサイズ: Haiku 4.5 はレート制限が緩いので積極的に並列化
     // ※ rate_limit エラーを検知したら下のループで自動的に待機を延長する
-    const batchSize = totalGroupCount > 30 ? 3 : totalGroupCount > 8 ? 3 : 4;
+    // Haiku 4.5 はレート制限が緩いので並列度を引き上げ、74グループでも28分以内に収める。
+    // rate_limit を検知したら下のループで interBatchWaitMs を 25秒へ動的延長して自動減速する。
+    const batchSize = totalGroupCount > 50 ? 4 : totalGroupCount > 30 ? 4 : totalGroupCount > 8 ? 5 : 6;
     // レートリミット用バッチ間待機(検知時に動的延長するため let)
-    let interBatchWaitMs = totalGroupCount > 30 ? 8000 : totalGroupCount > 15 ? 6000 : totalGroupCount > 8 ? 5000 : 4000;
+    let interBatchWaitMs = totalGroupCount > 30 ? 5000 : totalGroupCount > 15 ? 4000 : totalGroupCount > 8 ? 4000 : 3000;
     let rateLimitAdaptive = false; // rate_limit 検知時に true、待機を25秒に切り替える
 
     // 推定所要時間: 1グループあたり Haiku 4並列で ~25秒 と仮定
@@ -584,35 +643,19 @@ async function analyzeViaServer() {
         }
         const resp = await safeFetch('/api/analyze', bodyData);
 
-        const reader = resp.body.getReader();
-        const decoder = new TextDecoder();
-        let sseBuffer = '';
         let result = null;
         let errorCount = 0;
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          sseBuffer += decoder.decode(value, { stream: true });
-          const lines = sseBuffer.split('\n');
-          sseBuffer = lines.pop();
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const evt = JSON.parse(line.slice(6));
-                if (evt.type === 'group_complete') {
-                  result = evt.results;
-                  errorCount = evt.errorCount || 0;
-                } else if (evt.type === 'agent_complete') {
-                  addLog(`  [G${gIdx}] ${evt.name} 完了 (${evt.elapsed}秒)`, 'log-success');
-                } else if (evt.type === 'agent_error') {
-                  addLog(`  [G${gIdx}] ${evt.name} エラー: ${evt.error}`, 'log-error');
-                  failureReasons[classifyErr(evt.error)]++;
-                }
-              } catch {}
-            }
+        await readSSEWithWatchdog(resp, (evt) => {
+          if (evt.type === 'group_complete') {
+            result = evt.results;
+            errorCount = evt.errorCount || 0;
+          } else if (evt.type === 'agent_complete') {
+            addLog(`  [G${gIdx}] ${evt.name} 完了 (${evt.elapsed}秒)`, 'log-success');
+          } else if (evt.type === 'agent_error') {
+            addLog(`  [G${gIdx}] ${evt.name} エラー: ${evt.error}`, 'log-error');
+            failureReasons[classifyErr(evt.error)]++;
           }
-        }
+        }, `G${gIdx}`);
         // 4エージェント中3つ以上エラーなら失敗扱い(再試行対象)
         if (!result || errorCount >= 3) return null;
         return result;
@@ -709,11 +752,19 @@ async function analyzeViaServer() {
       addLog('全グループの解析に失敗しました', 'log-error');
       const breakdown = Object.entries(failureReasons).filter(([_, v]) => v > 0).map(([k, v]) => `${k}:${v}`).join(' / ');
       if (breakdown) addLog(`  原因内訳: ${breakdown}`, 'log-error');
+      let detail = '図面の解析にすべて失敗しました。';
       if (failureReasons.format > 0) {
         addLog('  → Opus4.7 フォーマット不一致が検出されました。/api/status?check=api でスモークテストを実行してください', 'log-error');
+        detail += ' AIモデルの応答フォーマット不一致です。管理者にスモークテスト(/api/status?check=api)の実行を依頼してください。';
       } else if (failureReasons.rate_limit > 0 || failureReasons.overloaded > 0) {
         addLog('  → APIレート制限/過負荷が主因です。5〜10分待ってから再実行してください', 'log-error');
+        detail += ' APIのレート制限・過負荷が主因です。5〜10分おいて再実行してください。';
+      } else if (failureReasons.network > 0 || failureReasons.timeout > 0) {
+        detail += ' 通信エラー/タイムアウトが主因です。社内プロキシ・ファイアウォールが通信を遮断していないか確認し、別回線でもお試しください。';
+      } else {
+        detail += ' 時間を置いて再度お試しください。繰り返す場合は管理者へ連絡してください。';
       }
+      showErrorState(detail);
       return;
     }
 
@@ -791,24 +842,10 @@ async function analyzeViaServer() {
               chunkIndex: Math.floor(i / CHUNK),
               totalChunks: Math.ceil(agentResults.length / CHUNK)
             });
-            const reader = resp.body.getReader();
-            const decoder = new TextDecoder();
-            let buf = '', mergedResult = null;
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              buf += decoder.decode(value, { stream: true });
-              const lines = buf.split('\n');
-              buf = lines.pop();
-              for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                  try {
-                    const evt = JSON.parse(line.slice(6));
-                    if (evt.type === 'pre_merge_complete') mergedResult = evt.result;
-                  } catch {}
-                }
-              }
-            }
+            let mergedResult = null;
+            await readSSEWithWatchdog(resp, (evt) => {
+              if (evt.type === 'pre_merge_complete') mergedResult = evt.result;
+            }, `pre-merge ${agentName}`);
             summaries.push(mergedResult || chunk[0]);
           } catch {
             summaries.push(chunk[0]); // フォールバック: 最初の結果を使用
@@ -832,7 +869,9 @@ async function analyzeViaServer() {
 
     response = await safeFetch('/api/analyze', mergedPayload);
 
-    return processSSEResponse(response);
+    await processSSEResponse(response);
+    if (!allResults && !fatalShown) showErrorState('見積書の最終生成でサーバー応答が途絶しました。時間を置いて再度お試しください。');
+    return;
 
   } else {
     // Local mode - FormData (no size limit)
@@ -841,33 +880,16 @@ async function analyzeViaServer() {
     formData.append('projectName', document.getElementById('projectName').value);
     formData.append('clientName', document.getElementById('clientName').value);
     response = await fetch('/api/analyze', { method: 'POST', body: formData });
-    return processSSEResponse(response);
+    await processSSEResponse(response);
+    if (!allResults && !fatalShown) showErrorState('サーバーから見積書データが返りませんでした。時間を置いて再度お試しください。');
+    return;
   }
 }
 
-function processSSEResponse(response) {
-  return new Promise(async (resolve) => {
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop();
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          try {
-            const evt = JSON.parse(line.slice(6));
-            handleSSE(evt);
-          } catch {}
-        }
-      }
-    }
-    resolve();
-  });
+async function processSSEResponse(response) {
+  // Phase2-4(数量積算/整形/検証)。Opus深い推論で個々のエージェントが長い。
+  // サーバーは10秒ごとに keepalive を送るため、120秒無受信＝回線断とみなす。
+  await readSSEWithWatchdog(response, (evt) => handleSSE(evt), 'Phase2-4', 120000);
 }
 
 function handleSSE(evt) {
@@ -914,6 +936,12 @@ function handleSSE(evt) {
   }
 
   if (t === 'complete') {
+    // サーバーが catch 経由で「失敗の終端」を送ってきた場合
+    if (evt.failed || !evt.phases || Object.keys(evt.phases || {}).length === 0) {
+      addLog('サーバー処理が完了しましたが、有効な見積書データがありませんでした', 'log-error');
+      if (!fatalShown) showErrorState('見積書の生成に失敗しました。時間を置いて再度お試しください。繰り返す場合は管理者へ連絡してください。');
+      return;
+    }
     document.getElementById('progressBar').style.width = '100%';
     document.getElementById('phaseBanner').innerHTML = `&#x2705; <span>全6体のAI解析が完了しました</span>`;
     addLog('全エージェント完了 — 見積書を表示します', 'log-success');
@@ -923,6 +951,8 @@ function handleSSE(evt) {
 
   if (t === 'error') {
     addLog(`エラー: ${evt.message}`, 'log-error');
+    // SSE経由のサーバーエラーは確実に画面へ。ただし後続の complete(失敗終端) と二重表示しないよう一度だけ。
+    if (!fatalShown) showErrorState(evt.message || '見積書生成中にサーバーでエラーが発生しました。');
   }
 }
 
@@ -1295,16 +1325,87 @@ const MAX_REQUEST_BYTES = 4.0 * 1024 * 1024;   // 4.0MB — Vercel リクエス�
 // ============================
 // safeFetch: 送信前にサイズチェック
 // ============================
-async function safeFetch(url, bodyObj) {
+async function safeFetch(url, bodyObj, opts = {}) {
   const bodyStr = JSON.stringify(bodyObj);
   if (bodyStr.length > MAX_REQUEST_BYTES) {
     throw new Error(`リクエストサイズ(${(bodyStr.length/1024/1024).toFixed(1)}MB)がVercel制限(4.5MB)を超えています。PDF分割に問題があります。`);
   }
-  return fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: bodyStr
-  });
+  // ★ハード上限: サーバー(maxDuration 300s)+通信往復の余裕で 320秒。
+  //   いかなる場合もこの時間を超えて1リクエストがハングし続けないことを保証する。
+  const hardMs = opts.hardTimeoutMs || 320000;
+  const controller = new AbortController();
+  const hardTimer = setTimeout(() => { try { controller.abort(); } catch {} }, hardMs);
+  let res;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: bodyStr,
+      signal: controller.signal
+    });
+  } catch (err) {
+    clearTimeout(hardTimer);
+    if (err.name === 'AbortError') {
+      throw new Error('接続タイムアウト — サーバーが応答しません(ネットワーク/プロキシ/ファイアウォールの可能性)');
+    }
+    throw err;
+  }
+  // ストリーム読み取り側で参照できるよう、コントローラと後始末を載せておく
+  res._abortController = controller;
+  res._clearHardTimer = () => clearTimeout(hardTimer);
+  return res;
+}
+
+// ============================
+// 堅牢SSEリーダー: アイドル(無受信)とハード上限を監視し、決して無限に待たない
+//   - サーバーは10秒ごとに keepalive コメントを送るため、IDLE_MS(90秒)無受信＝回線断とみなす
+//   - reader.cancel() で確実にループを脱出(AbortController不在のローカルモードでも機能)
+//   - onEvent には data: 行のJSONのみ渡す。コメント行(: keepalive)は到達確認に使い無視
+// ============================
+async function readSSEWithWatchdog(resp, onEvent, label = '', idleMs = 90000) {
+  if (!resp || !resp.body) {
+    if (resp && resp._clearHardTimer) resp._clearHardTimer();
+    throw new Error(`${label ? label + ': ' : ''}サーバー応答が空です (HTTP ${resp ? resp.status : '??'})`);
+  }
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let timedOut = false;
+  let idleTimer = null;
+  const armIdle = () => {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      timedOut = true;
+      try { reader.cancel(); } catch {}
+      if (resp._abortController) { try { resp._abortController.abort(); } catch {} }
+    }, idleMs);
+  };
+  armIdle();
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      armIdle(); // データ(keepalive含む)を受信するたびにアイドルタイマーをリセット
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try { onEvent(JSON.parse(line.slice(6))); } catch {}
+        }
+      }
+    }
+  } catch (err) {
+    // アイドル中断やハードタイムアウトによる reader.cancel()/abort() で
+    // read() が reject するブラウザがあるが、timedOut の場合は下で統一メッセージを投げる
+    if (!timedOut) throw err;
+  } finally {
+    clearTimeout(idleTimer);
+    if (resp._clearHardTimer) resp._clearHardTimer();
+  }
+  if (timedOut) {
+    throw new Error(`${label ? label + ': ' : ''}サーバー応答が${Math.round(idleMs/1000)}秒途絶しました(通信タイムアウト)`);
+  }
 }
 
 // ============================
@@ -1430,11 +1531,20 @@ async function splitPdfIntoGroups(file, initialMaxPagesPerGroup = 10) {
   const fileSizeMB = file.size / (1024 * 1024);
   const base64SizeEst = file.size * 4 / 3;  // base64は元サイズの約1.33倍
 
-  // ===== 小さいファイル: 分割不要 =====
+  // ===== 小さいファイル: 分割不要(ライブラリ不要) =====
   if (base64SizeEst <= SAFE_BASE64_BYTES) {
     const arrayBuffer = await file.arrayBuffer();
     const base64 = uint8ToBase64(new Uint8Array(arrayBuffer));
     return [{ name: file.name, base64, pages: 'all', sizeBytes: base64.length, groupIndex: 0, totalGroups: 1 }];
+  }
+
+  // ===== 大容量PDFの分割には pdf-lib / pdf.js が必須 =====
+  // vendor(同一オリジン)もCDNも読めない場合(社内ファイアウォール等)は、無言で失敗せず明示エラーにする
+  if (typeof PDFLib === 'undefined' || typeof pdfjsLib === 'undefined') {
+    const missing = [];
+    if (typeof PDFLib === 'undefined') missing.push('pdf-lib');
+    if (typeof pdfjsLib === 'undefined') missing.push('pdf.js');
+    throw new Error(`大容量PDFの分割に必要なライブラリ(${missing.join(', ')})を読み込めませんでした。社内ネットワークが /vendor/ やCDNへの通信を遮断している可能性があります。ページを再読み込みするか、別回線でお試しください。`);
   }
 
   // ===== 大きいファイル: base64Full は作らず直接分割 =====
