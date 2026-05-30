@@ -697,13 +697,18 @@ async function handleFinalMode(req, res, apiKey, mergedResults, projectName, cli
       send);
 
     // Phase 3: 見積書整形 (Sonnet)
-    // 入力圧縮: r5 が大規模だと Sonnet の処理が180s超えで落ちるため、整形に不要なフィールドを削除し items を上限化
+    // 入力圧縮: r5 が大規模だと Sonnet の処理が遅く、Vercel 300秒ハードキルで complete を送れず無出力になる。
+    // → Agent 6 のタイムアウトを「残り時間予算」に動的制限し、Vercelに殺される前に自前で打ち切る。
+    //   間に合わなければ下の r5 フォールバックが必ず発火し、ユーザーは必ず見積書を受け取る。
+    //   maxRetries 0: タイムアウト再試行で二重に時間を食わない(タイムアウトは元々再試行対象外だが明示)。
     send('phase', { phase: 3, message: 'Phase 3: 見積書生成AIが最終見積書を整形中...' });
     const compactR5ForAgent6 = compactEstimateForFormatting(r5);
+    const agent6BudgetMs = Math.max(45000, Math.min(170000, remainingMs() - 30000)); // フォールバック+complete送出用に30秒残す
+    send('phase', { phase: 3, message: `Phase 3: 見積書生成AIが最終見積書を整形中...(最大${Math.round(agent6BudgetMs/1000)}秒)` });
     const r6 = await runAgentFn(apiKey, 6, '見積書生成AI',
       getAgent6Prompt(compactR5ForAgent6, r4),
       [{ type: 'text', text: '上記の指示に従い、御見積書を完成させてください。' }],
-      { model: MODEL_PRIMARY, maxTokens: 14000, temperature: 0.1, timeoutMs: 210000, maxRetries: 1 },
+      { model: MODEL_PRIMARY, maxTokens: 14000, temperature: 0.1, timeoutMs: agent6BudgetMs, maxRetries: 0 },
       send);
 
     // Phase 4: 精度検証 (Opus + Extended Thinking) - 時間予算が足りないならスキップ
@@ -746,6 +751,17 @@ async function handleFinalMode(req, res, apiKey, mergedResults, projectName, cli
       const fallbackReason = r6?.error ? `Agent 6エラー(${r6.error})` : 'Agent 6結果なし';
       send('agent_fallback', { agent: 6, name: '見積書生成AI', reason: fallbackReason, fallbackTo: 'Agent 5 (数量積算AI)' });
       finalEstimate = buildFallbackEstimateFromR5(r5, projectName, clientName, fallbackReason);
+    }
+
+    // 最終ガード: Agent 5/6 とも有効な見積もりを作れなかった場合は、壊れた空見積書を出さず明確な失敗として通知
+    const hasValidEstimate = finalEstimate &&
+      !finalEstimate.error &&
+      (finalEstimate.estimate || (Array.isArray(finalEstimate.categories) && finalEstimate.categories.length));
+    if (!hasValidEstimate) {
+      send('error', { message: '数量積算AI(Agent 5)・見積書生成AI(Agent 6)とも有効な見積もりを生成できませんでした。図面の情報が読み取れなかった可能性があります。時間を置いて再実行してください。' });
+      send('complete', { phases: {}, failed: true });
+      res.end();
+      return;
     }
 
     send('complete', {
@@ -926,6 +942,10 @@ module.exports = async function handler(req, res) {
   if (!pdfs || !pdfs.length) { res.status(400).json({ error: 'PDFデータが必要です' }); return; }
 
   const send = setupSSE(res);
+  // Vercel maxDuration 300秒に対する時間予算。Agent 6/7 を動的に制限してハードキルを防ぐ。
+  const T0d = Date.now();
+  const TIME_BUDGET_MS_D = 250000;
+  const remainingMsD = () => TIME_BUDGET_MS_D - (Date.now() - T0d);
 
   let pdfContents;
   if (req.body.images && req.body.images.length) {
@@ -970,18 +990,26 @@ module.exports = async function handler(req, res) {
       [{ type: 'text', text: '上記の指示に従い、概算見積もりを作成してください。' }],
       { model: MODEL_REASONING, maxTokens: MAX_TOKENS_REASONING, thinking: true }, send);
 
-    // Phase 3: 見積書整形 (Sonnet) — 入力圧縮&maxTokens削減&タイムアウト延長
-    send('phase', { phase: 3, message: 'Phase 3: 見積書生成AIが最終見積書を整形中...' });
+    // Phase 3: 見積書整形 (Sonnet) — 残り時間予算に収めてVercelハードキルを回避(間に合わなければr5フォールバック)
+    const agent6BudgetMsD = Math.max(45000, Math.min(170000, remainingMsD() - 30000));
+    send('phase', { phase: 3, message: `Phase 3: 見積書生成AIが最終見積書を整形中...(最大${Math.round(agent6BudgetMsD/1000)}秒)` });
     const compactR5ForAgent6Default = compactEstimateForFormatting(r5);
     const r6 = await runAgentFn(apiKey, 6, '見積書生成AI', getAgent6Prompt(compactR5ForAgent6Default, r4),
       [{ type: 'text', text: '上記の指示に従い、御見積書を完成させてください。' }],
-      { model: MODEL_PRIMARY, maxTokens: 14000, temperature: 0.1, timeoutMs: 210000, maxRetries: 1 }, send);
+      { model: MODEL_PRIMARY, maxTokens: 14000, temperature: 0.1, timeoutMs: agent6BudgetMsD, maxRetries: 0 }, send);
 
-    // Phase 4: 検証
-    send('phase', { phase: 4, message: 'Phase 4: 精度検証AIが整合性をチェック中...' });
-    const r7 = await runAgentFn(apiKey, 7, '精度検証AI', getAgent7Prompt(r6, r5),
-      [{ type: 'text', text: '上記の指示に従い、見積書を厳密に検証し確定版を出力してください。' }],
-      { model: MODEL_REASONING, maxTokens: MAX_TOKENS_REASONING, thinking: true }, send);
+    // Phase 4: 検証 — 時間予算が足りなければスキップ(Vercelハードキル回避)
+    let r7 = null;
+    if (remainingMsD() < 60000) {
+      send('phase', { phase: 4, message: `Phase 4: 時間予算不足(残${Math.round(remainingMsD()/1000)}秒) — 精度検証AIをスキップ` });
+      send('agent_error', { agent: 7, name: '精度検証AI', error: '時間予算不足でスキップ', elapsed: '0.0' });
+      r7 = { skipped: true, reason: 'time_budget_exhausted' };
+    } else {
+      send('phase', { phase: 4, message: 'Phase 4: 精度検証AIが整合性をチェック中...' });
+      r7 = await runAgentFn(apiKey, 7, '精度検証AI', getAgent7Prompt(r6, r5),
+        [{ type: 'text', text: '上記の指示に従い、見積書を厳密に検証し確定版を出力してください。' }],
+        { model: MODEL_REASONING, maxTokens: MAX_TOKENS_REASONING, thinking: true, timeoutMs: Math.max(45000, remainingMsD() - 20000) }, send);
+    }
 
     // r7 / r6 / r5 の順でフォールバック
     let finalEstimate;
