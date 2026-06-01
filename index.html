@@ -1126,22 +1126,28 @@ async function analyzeViaBrowser() {
     r5 = { error: err.message };
   }
 
-  // Phase 3: Agent 6 — 入力圧縮 & maxTokens削減で180sタイムアウト回避
+  // Phase 3: Agent 6 — 決定論ベース(金額はAgent5の確定値)＋軽量LLMエンリッチ。タイムアウトしない設計。
+  //   旧版はSonnetで見積書を丸ごと再生成→入力が大きいと終わらずタイムアウト(エラー表示)になっていた。
+  //   新版は確定値を即見積書化し、LLMは前提/除外/精度コメントのみ(失敗しても見積書は有効)。
   handleSSE({ type: 'phase', phase: 3, message: 'Phase 3: 見積書生成AIが整形中...' });
   handleSSE({ type: 'agent_start', agent: 6, name: '見積書生成AI' });
   let r6, start6 = Date.now();
-  // Agent 6 への入力圧縮: basis 等を削除、items を上限化
-  const compactR5 = compactEstimateForFormatting(r5);
-  try {
-    const text6 = await callAPI([{
-      role: 'user',
-      content: [{ type: 'text', text: `以下の数量積算結果から、プロフェッショナルな御見積書をJSON形式で完成させてください。\n\n積算データ: ${JSON.stringify(compactR5)}\n条件: ${JSON.stringify(r4)}` }]
-    }], null, { model: 'claude-sonnet-4-6', maxTokens: 14000, temperature: 0.1, timeoutMs: 210000 });
+  const projName6 = document.getElementById('projectName')?.value || '';
+  const clientName6 = document.getElementById('clientName')?.value || '';
+  if (!r5 || r5.error || !(Number(r5.directCostTotal) > 0)) {
+    r6 = { error: r5 && r5.error ? r5.error : 'Agent 5 の積算結果が無効' };
+    handleSSE({ type: 'agent_error', agent: 6, name: '見積書生成AI', error: '積算結果が無効なため整形できません', elapsed: ((Date.now()-start6)/1000).toFixed(1) });
+  } else {
+    r6 = buildEstimateFromR5(r5, projName6, clientName6);
+    try {
+      const eText = await callAPI([{
+        role: 'user',
+        content: [{ type: 'text', text: buildAgent6EnrichInput(r6.estimate) }]
+      }], null, { model: 'claude-sonnet-4-6', maxTokens: 1500, temperature: 0.3, timeoutMs: 45000 });
+      applyAgent6Enrich(r6.estimate, parseJSON(eText));
+    } catch (e) { /* エンリッチ失敗は無視: r6は既に有効 */ }
+    fillAgent6Defaults(r6.estimate);
     handleSSE({ type: 'agent_complete', agent: 6, name: '見積書生成AI', elapsed: ((Date.now()-start6)/1000).toFixed(1) });
-    r6 = parseJSON(text6);
-  } catch (err) {
-    handleSSE({ type: 'agent_error', agent: 6, name: '見積書生成AI', error: err.message, elapsed: ((Date.now()-start6)/1000).toFixed(1) });
-    r6 = { error: err.message };
   }
 
   // Phase 4: Agent 7 (検証・Opus 深い推論)
@@ -1292,6 +1298,86 @@ function buildFallbackEstimateFromR5(r5, projectName, clientName, reason) {
       exclusions: ['消費税以外の租税公課', '別途指定外の特殊工事', '通常の建築工事範囲外の項目']
     }
   };
+}
+
+// ============================
+// 見積書 決定論ビルダー（金額はAgent5の確定値。LLM不要・即時・タイムアウト不可）
+//   api/analyze.js と同期（CLAUDE.md ルール）。Agent6のタイムアウト恒久対策。
+// ============================
+function buildEstimateFromR5(r5, projectName, clientName) {
+  const ps = r5.projectSummary || {};
+  const fee = r5.feeBreakdown || {};
+  const directCost = r5.directCostTotal || 0;
+  const mgmt = fee.managementFee || 0, design = fee.designFee || 0, oh = fee.overhead || 0;
+  const subtotal = directCost + mgmt + design + oh;
+  const discount = r5.discount || 0;
+  const constructionPrice = subtotal - discount;
+  const legal = fee.legalWelfare || 0;
+  const totalBeforeTax = r5.totalBeforeTax || (constructionPrice + legal);
+  const tax = r5.tax || Math.round(totalBeforeTax * 0.1);
+  const totalWithTax = r5.totalWithTax || (totalBeforeTax + tax);
+  const refM2 = ps.referenceM2Cost, estM2 = ps.estimatedM2Cost;
+  return {
+    agent: '見積書生成AI',
+    estimate: {
+      title: '概算御見積書',
+      subtitle: 'AI自動生成（参照: 西友座間林間店 + 西友西一之江店 + 夏島工場）',
+      date: new Date().toLocaleDateString('ja-JP'),
+      projectName: projectName || ps.name || '',
+      clientName: clientName || '',
+      location: '',
+      buildingInfo: [ps.use, ps.structure, ps.floors ? `${ps.floors}階` : '', ps.totalFloorArea ? `${ps.totalFloorArea}m2` : ''].filter(Boolean).join(' / '),
+      summary: {
+        directCostTotal: directCost, managementFee: mgmt, designFee: design, overhead: oh,
+        subtotalBeforeDiscount: subtotal, discount, constructionPrice, legalWelfare: legal,
+        totalBeforeTax, tax, totalWithTax
+      },
+      categories: Array.isArray(r5.categories) ? r5.categories : [],
+      accuracy: {
+        grade: 'B', range: '±20%',
+        note: '概算見積（精度±20%）。数量・単価はAI積算（Agent 5）が自己検算しています。',
+        comparisonWithReference: (refM2 && estM2) ? `参照m2単価 ${Number(refM2).toLocaleString()}円 / 推定m2単価 ${Number(estM2).toLocaleString()}円` : ''
+      },
+      assumptions: [],
+      exclusions: []
+    }
+  };
+}
+
+function buildAgent6EnrichInput(estimate) {
+  const s = estimate.summary || {};
+  const cats = (estimate.categories || []).map(c => `${c.name}:${c.amount}`).join(' / ');
+  return 'あなたは建設見積書の専門AIです。以下の確定済み概算見積に添える「前提条件」「除外事項」「精度コメント」のみをJSONで返してください。金額の再計算・明細の出力は不要です。\n' +
+    `建物概要: ${estimate.buildingInfo}\n税抜合計: ${s.totalBeforeTax} / 税込: ${s.totalWithTax} / 直接工事費: ${s.directCostTotal}\n工種: ${cats}\n\n` +
+    '出力JSON（これ以外は出力しない）: {"assumptions":["..."],"exclusions":["..."],"accuracy":{"note":"...","comparisonWithReference":"..."}}\n' +
+    'assumptions・exclusions は各3〜5件、建物用途・構造を踏まえ具体的に記載すること。';
+}
+
+function applyAgent6Enrich(estimate, e) {
+  if (!e || e._parseError || typeof e !== 'object') return;
+  if (Array.isArray(e.assumptions) && e.assumptions.length) estimate.assumptions = e.assumptions.filter(x => typeof x === 'string');
+  if (Array.isArray(e.exclusions) && e.exclusions.length) estimate.exclusions = e.exclusions.filter(x => typeof x === 'string');
+  if (e.accuracy && typeof e.accuracy === 'object') {
+    if (e.accuracy.note) estimate.accuracy.note = e.accuracy.note;
+    if (e.accuracy.comparisonWithReference) estimate.accuracy.comparisonWithReference = e.accuracy.comparisonWithReference;
+  }
+}
+
+function fillAgent6Defaults(estimate) {
+  if (!estimate.assumptions || !estimate.assumptions.length) {
+    estimate.assumptions = [
+      '本見積は提出図面から読み取れる範囲での概算です（精度±20%）。',
+      '地盤改良・杭工事の数量は地質調査結果により変動します。',
+      '鋼材・生コン等の市況により単価が変動する場合があります。'
+    ];
+  }
+  if (!estimate.exclusions || !estimate.exclusions.length) {
+    estimate.exclusions = [
+      '別途明示のない電気設備工事・特殊設備・什器・サイン工事',
+      '地中障害物・埋設物の撤去処分、汚染土壌の処分',
+      '消費税以外の租税公課、近隣対策・各種調査費'
+    ];
+  }
 }
 
 function fileToBase64(file) {

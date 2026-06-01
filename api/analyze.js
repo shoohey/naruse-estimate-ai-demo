@@ -197,6 +197,7 @@ async function callClaudeWithRetry(apiKey, userContent, systemPrompt, opts, send
 function buildRef(domain) {
   const r = REFERENCE_DATA;
   const ni = r.PROJECTS && r.PROJECTS.nishiIchinoe; // v2: 西一之江を補助参照として併用
+  const ns = r.PROJECTS && r.PROJECTS.natsushima;   // v3: 夏島工場(製造施設・小規模S造)を補助参照として併用
 
   const base = `
 【参照プロジェクト1: ${r.project.name}】(プライマリ・新店S造2階建)
@@ -208,7 +209,13 @@ function buildRef(domain) {
 用途: ${ni.project.type}
 総額(税抜): ${(ni.project.totalCostExclTax/10000).toLocaleString()}万円 (本工事のみ。追加工事を含めると ${((ni.grandTotalExclTax||ni.project.totalCostExclTax)/10000).toLocaleString()}万円)
 【工事比率(西一之江)】${Object.entries(ni.categories).map(([k,v])=>`${k}: ${(v.ratio*100).toFixed(1)}%`).join(' / ')}
-※西一之江は防災設備工事を電気側に独立計上（座間と異なる）。鉄筋・石・タイル工事は0計上（既存建屋活用）。` : '');
+※西一之江は防災設備工事を電気側に独立計上（座間と異なる）。鉄筋・石・タイル工事は0計上（既存建屋活用）。` : '') + (ns ? `
+
+【参照プロジェクト3: ${ns.project.name}】(工場・製造施設 S造・小規模)
+用途: ${ns.project.type} / 延床: ${ns.project.totalFloorArea}m2 / m2単価(税抜): ${ns.project.costPerM2.toLocaleString()}円
+総額(税抜): ${(ns.project.totalCostExclTax/10000).toLocaleString()}万円
+【工事比率(夏島)】${Object.entries(ns.categories).map(([k,v])=>`${k}: ${(v.ratio*100).toFixed(1)}%`).join(' / ')}
+※小規模S造工場はm2単価が小売店の約2.2倍。地盤改良杭・重量鉄骨(45t/69kg/m2)・大型シャッターが主因。電気は別途(0計上)。座間/西一之江(小売)の単価を工場に当てると半額以下に過小評価されるため要注意。` : '');
 
   // 単価DBは2プロジェクト分を併記してエージェントに比較判断を委ねる
   const merge = (k) => {
@@ -696,20 +703,32 @@ async function handleFinalMode(req, res, apiKey, mergedResults, projectName, cli
       { model: MODEL_REASONING, maxTokens: MAX_TOKENS_REASONING, thinking: true },
       send);
 
-    // Phase 3: 見積書整形 (Sonnet)
-    // 入力圧縮: r5 が大規模だと Sonnet の処理が遅く、Vercel 300秒ハードキルで complete を送れず無出力になる。
-    // → Agent 6 のタイムアウトを「残り時間予算」に動的制限し、Vercelに殺される前に自前で打ち切る。
-    //   間に合わなければ下の r5 フォールバックが必ず発火し、ユーザーは必ず見積書を受け取る。
-    //   maxRetries 0: タイムアウト再試行で二重に時間を食わない(タイムアウトは元々再試行対象外だが明示)。
-    send('phase', { phase: 3, message: 'Phase 3: 見積書生成AIが最終見積書を整形中...' });
-    const compactR5ForAgent6 = compactEstimateForFormatting(r5);
-    const agent6BudgetMs = Math.max(45000, Math.min(170000, remainingMs() - 30000)); // フォールバック+complete送出用に30秒残す
-    send('phase', { phase: 3, message: `Phase 3: 見積書生成AIが最終見積書を整形中...(最大${Math.round(agent6BudgetMs/1000)}秒)` });
-    const r6 = await runAgentFn(apiKey, 6, '見積書生成AI',
-      getAgent6Prompt(compactR5ForAgent6, r4),
-      [{ type: 'text', text: '上記の指示に従い、御見積書を完成させてください。' }],
-      { model: MODEL_PRIMARY, maxTokens: 14000, temperature: 0.1, timeoutMs: agent6BudgetMs, maxRetries: 0 },
-      send);
+    // Phase 3: 見積書整形 — 決定論ベース(金額はAgent5の確定値)＋軽量LLMエンリッチ。
+    //   旧版はSonnetが見積書を丸ごと再生成しており、入力が大きいとVercel 300秒ハードキル前に
+    //   終わらずタイムアウト→フォールバック(エラー表示)になっていた(例: 116秒で打切り)。
+    //   新版はAgent5の確定値を即時に見積書化し、LLMには前提/除外/精度コメントのみを小出力で依頼。
+    //   LLMが間に合わなくても見積書は既に有効なので、タイムアウトでも"エラー"にならない。
+    send('phase', { phase: 3, message: 'Phase 3: 見積書生成AIが整形中...' });
+    send('agent_start', { agent: 6, name: '見積書生成AI' });
+    const t6 = Date.now();
+    let r6;
+    if (!r5 || r5.error || !(Number(r5.directCostTotal) > 0)) {
+      r6 = { error: r5 && r5.error ? r5.error : 'Agent 5 の積算結果が無効' };
+      send('agent_error', { agent: 6, name: '見積書生成AI', error: '積算結果が無効なため整形できません', elapsed: ((Date.now()-t6)/1000).toFixed(1) });
+    } else {
+      r6 = buildEstimateFromR5(r5, projectName, clientName);
+      if (remainingMs() > 55000) {
+        try {
+          const enrichText = await callClaude(apiKey,
+            [{ type: 'text', text: buildAgent6EnrichInput(r6.estimate) }],
+            null,
+            { model: MODEL_PRIMARY, maxTokens: 1500, temperature: 0.3, timeoutMs: Math.min(40000, remainingMs() - 35000) });
+          applyAgent6Enrich(r6.estimate, parseJSONRobust(enrichText));
+        } catch (e) { /* エンリッチ失敗は無視: r6は既に有効 */ }
+      }
+      fillAgent6Defaults(r6.estimate);
+      send('agent_complete', { agent: 6, name: '見積書生成AI', elapsed: ((Date.now()-t6)/1000).toFixed(1) });
+    }
 
     // Phase 4: 精度検証 (Opus + Extended Thinking) - 時間予算が足りないならスキップ
     let r7 = null;
@@ -880,6 +899,92 @@ function buildFallbackEstimateFromR5(r5, projectName, clientName, reason) {
 }
 
 // ============================
+// 見積書 決定論ビルダー（金額はAgent5の確定値。LLM不要・即時・タイムアウト不可）
+//   旧Agent6はSonnetで見積書を丸ごと再生成しており、入力が大きいと300秒以内に終わらず
+//   タイムアウト→フォールバック(エラー表示)になっていた。新版は確定値を即見積書化し、
+//   LLMは前提/除外/精度コメントの軽量エンリッチのみ（失敗しても見積書は有効）。
+//   ※ index.html と同期すること（CLAUDE.md ルール）。
+// ============================
+function buildEstimateFromR5(r5, projectName, clientName) {
+  const ps = r5.projectSummary || {};
+  const fee = r5.feeBreakdown || {};
+  const directCost = r5.directCostTotal || 0;
+  const mgmt = fee.managementFee || 0, design = fee.designFee || 0, oh = fee.overhead || 0;
+  const subtotal = directCost + mgmt + design + oh;
+  const discount = r5.discount || 0;
+  const constructionPrice = subtotal - discount;
+  const legal = fee.legalWelfare || 0;
+  const totalBeforeTax = r5.totalBeforeTax || (constructionPrice + legal);
+  const tax = r5.tax || Math.round(totalBeforeTax * 0.1);
+  const totalWithTax = r5.totalWithTax || (totalBeforeTax + tax);
+  const refM2 = ps.referenceM2Cost, estM2 = ps.estimatedM2Cost;
+  return {
+    agent: '見積書生成AI',
+    estimate: {
+      title: '概算御見積書',
+      subtitle: 'AI自動生成（参照: 西友座間林間店 + 西友西一之江店 + 夏島工場）',
+      date: new Date().toLocaleDateString('ja-JP'),
+      projectName: projectName || ps.name || '',
+      clientName: clientName || '',
+      location: '',
+      buildingInfo: [ps.use, ps.structure, ps.floors ? `${ps.floors}階` : '', ps.totalFloorArea ? `${ps.totalFloorArea}m2` : ''].filter(Boolean).join(' / '),
+      summary: {
+        directCostTotal: directCost, managementFee: mgmt, designFee: design, overhead: oh,
+        subtotalBeforeDiscount: subtotal, discount, constructionPrice, legalWelfare: legal,
+        totalBeforeTax, tax, totalWithTax
+      },
+      categories: Array.isArray(r5.categories) ? r5.categories : [],
+      accuracy: {
+        grade: 'B', range: '±20%',
+        note: '概算見積（精度±20%）。数量・単価はAI積算（Agent 5）が自己検算しています。',
+        comparisonWithReference: (refM2 && estM2) ? `参照m2単価 ${Number(refM2).toLocaleString()}円 / 推定m2単価 ${Number(estM2).toLocaleString()}円` : ''
+      },
+      assumptions: [],
+      exclusions: []
+    }
+  };
+}
+
+// Agent 6 エンリッチ用プロンプト（前提/除外/精度コメントのみを小出力で生成）
+function buildAgent6EnrichInput(estimate) {
+  const s = estimate.summary || {};
+  const cats = (estimate.categories || []).map(c => `${c.name}:${c.amount}`).join(' / ');
+  return 'あなたは建設見積書の専門AIです。以下の確定済み概算見積に添える「前提条件」「除外事項」「精度コメント」のみをJSONで返してください。金額の再計算・明細の出力は不要です。\n' +
+    `建物概要: ${estimate.buildingInfo}\n税抜合計: ${s.totalBeforeTax} / 税込: ${s.totalWithTax} / 直接工事費: ${s.directCostTotal}\n工種: ${cats}\n\n` +
+    '出力JSON（これ以外は出力しない）: {"assumptions":["..."],"exclusions":["..."],"accuracy":{"note":"...","comparisonWithReference":"..."}}\n' +
+    'assumptions・exclusions は各3〜5件、建物用途・構造を踏まえ具体的に記載すること。';
+}
+
+// エンリッチ結果を見積書にマージ（金額は触らない）
+function applyAgent6Enrich(estimate, e) {
+  if (!e || e._parseError || typeof e !== 'object') return;
+  if (Array.isArray(e.assumptions) && e.assumptions.length) estimate.assumptions = e.assumptions.filter(x => typeof x === 'string');
+  if (Array.isArray(e.exclusions) && e.exclusions.length) estimate.exclusions = e.exclusions.filter(x => typeof x === 'string');
+  if (e.accuracy && typeof e.accuracy === 'object') {
+    if (e.accuracy.note) estimate.accuracy.note = e.accuracy.note;
+    if (e.accuracy.comparisonWithReference) estimate.accuracy.comparisonWithReference = e.accuracy.comparisonWithReference;
+  }
+}
+
+// エンリッチが空/失敗のときのテンプレ補完（見積書を常に体裁の整った状態にする）
+function fillAgent6Defaults(estimate) {
+  if (!estimate.assumptions || !estimate.assumptions.length) {
+    estimate.assumptions = [
+      '本見積は提出図面から読み取れる範囲での概算です（精度±20%）。',
+      '地盤改良・杭工事の数量は地質調査結果により変動します。',
+      '鋼材・生コン等の市況により単価が変動する場合があります。'
+    ];
+  }
+  if (!estimate.exclusions || !estimate.exclusions.length) {
+    estimate.exclusions = [
+      '別途明示のない電気設備工事・特殊設備・什器・サイン工事',
+      '地中障害物・埋設物の撤去処分、汚染土壌の処分',
+      '消費税以外の租税公課、近隣対策・各種調査費'
+    ];
+  }
+}
+
+// ============================
 // Pre-merge モード: 大量グループの中間結果を要約
 // ============================
 async function handlePreMergeMode(req, res, apiKey) {
@@ -990,13 +1095,28 @@ module.exports = async function handler(req, res) {
       [{ type: 'text', text: '上記の指示に従い、概算見積もりを作成してください。' }],
       { model: MODEL_REASONING, maxTokens: MAX_TOKENS_REASONING, thinking: true }, send);
 
-    // Phase 3: 見積書整形 (Sonnet) — 残り時間予算に収めてVercelハードキルを回避(間に合わなければr5フォールバック)
-    const agent6BudgetMsD = Math.max(45000, Math.min(170000, remainingMsD() - 30000));
-    send('phase', { phase: 3, message: `Phase 3: 見積書生成AIが最終見積書を整形中...(最大${Math.round(agent6BudgetMsD/1000)}秒)` });
-    const compactR5ForAgent6Default = compactEstimateForFormatting(r5);
-    const r6 = await runAgentFn(apiKey, 6, '見積書生成AI', getAgent6Prompt(compactR5ForAgent6Default, r4),
-      [{ type: 'text', text: '上記の指示に従い、御見積書を完成させてください。' }],
-      { model: MODEL_PRIMARY, maxTokens: 14000, temperature: 0.1, timeoutMs: agent6BudgetMsD, maxRetries: 0 }, send);
+    // Phase 3: 見積書整形 — 決定論ベース(金額はAgent5の確定値)＋軽量LLMエンリッチ(タイムアウトしない設計)
+    send('phase', { phase: 3, message: 'Phase 3: 見積書生成AIが整形中...' });
+    send('agent_start', { agent: 6, name: '見積書生成AI' });
+    const t6d = Date.now();
+    let r6;
+    if (!r5 || r5.error || !(Number(r5.directCostTotal) > 0)) {
+      r6 = { error: r5 && r5.error ? r5.error : 'Agent 5 の積算結果が無効' };
+      send('agent_error', { agent: 6, name: '見積書生成AI', error: '積算結果が無効なため整形できません', elapsed: ((Date.now()-t6d)/1000).toFixed(1) });
+    } else {
+      r6 = buildEstimateFromR5(r5, projectName, clientName);
+      if (remainingMsD() > 55000) {
+        try {
+          const enrichText = await callClaude(apiKey,
+            [{ type: 'text', text: buildAgent6EnrichInput(r6.estimate) }],
+            null,
+            { model: MODEL_PRIMARY, maxTokens: 1500, temperature: 0.3, timeoutMs: Math.min(40000, remainingMsD() - 35000) });
+          applyAgent6Enrich(r6.estimate, parseJSONRobust(enrichText));
+        } catch (e) { /* エンリッチ失敗は無視: r6は既に有効 */ }
+      }
+      fillAgent6Defaults(r6.estimate);
+      send('agent_complete', { agent: 6, name: '見積書生成AI', elapsed: ((Date.now()-t6d)/1000).toFixed(1) });
+    }
 
     // Phase 4: 検証 — 時間予算が足りなければスキップ(Vercelハードキル回避)
     let r7 = null;
